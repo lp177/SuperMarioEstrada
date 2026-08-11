@@ -1,37 +1,65 @@
 // ============================================================================
-// Generative chiptune player. Reads the pure-data TRACKS score (tracks.ts)
-// and schedules square/triangle/noise voices through a gentle master lowpass.
+// Generative chiptune player. Reads the pure-data TRACKS score (tracks.ts),
+// derives per-variant arrangements (arrange()), and schedules square/triangle/
+// pulse/noise voices through per-layer gain buses into a gentle master lowpass.
 //
 // Scheduling: the classic lookahead pattern — a 25 ms interval timer keeps
 // the next 120 ms of beats queued on the AudioContext clock, so tab jank
 // never audibly stutters the score. The timer exists only after ensure() and
-// only while a track plays; this module imports and constructs clean in Node.
+// only while at least one layer is live; this module imports and constructs
+// clean in plain Node.
+//
+// CROSSFADES: every track change (play / playHome / playPause / endPause /
+// takeover / release / stop) goes through LAYERS. The outgoing layer keeps
+// being scheduled until its fade deadline while its bus gain ramps down
+// (setTargetAtTime — a ramp, never a step); the incoming layer's bus ramps up
+// from silence over XFADE_S. No hard cuts, no clicks, anywhere.
+//
+// VARIANTS: play(id, { variant }) — arrangement is derived deterministically
+// in tracks.ts (arrange()); this module only realizes it: transposed root,
+// swapped lead timbre (incl. a built 25%-duty periodic wave), variant swing,
+// rearranged bass/percussion, thinned arps, and the sourNotes gag (a single
+// deliberately off-scale nudge, once per loop).
 //
 // Intensity (0..1): scales tempo ±12% around the base bpm and opens the
 // master lowpass. Both move SMOOTHLY (per-frame easing in update()) and only
-// affect *future* beats — the playhead is never reset.
+// affect *future* beats — playheads are never reset.
+//
+// HOME SET: playHome() rotates title/home-b/home-c through a deterministic
+// shuffle bag (all 3 before any repeat, never the same twice in a row).
+// HOLD SET: playPause() parks the score on rotating call-center hold muzak
+// (hold-a/hold-b alternating); endPause() returns to the interrupted
+// track+variant (loop restarts from the top — documented, accepted).
+//
+// SUSPEND: suspend()/resume() freeze/unfreeze the whole audio clock
+// (AudioContext.suspend + stopping the lookahead timer so nothing piles up).
+// Both are safe no-ops before ensure(); main.ts wires visibilitychange.
 //
 // takeover()/release() — the big-moment stack. HOUSE RULE (documented choice):
 // on release we hand back RE-ROLLED — a level-family track (meadow/sewer/
 // casino/castle) resumes as the NEXT family member in a fixed cycle
-// (meadow->sewer->casino->castle->meadow), deterministic, so the ear never
-// gets the identical tune twice around a takeover. Scene-bound tracks
-// (title/cutscene/ending/boss) resume unchanged: swapping those would put the
-// wrong scene's score on screen. An unpaired release() THROWS.
+// (meadow->sewer->casino->castle->meadow), keeping the interrupted VARIANT,
+// deterministic, so the ear never gets the identical tune twice around a
+// takeover. Scene-bound tracks (title/home/hold/cutscene/ending/boss) resume
+// unchanged: swapping those would put the wrong scene's score on screen. An
+// unpaired release() THROWS.
 // ============================================================================
 
 import type { MusicLike, TrackId } from '../core/types.ts';
 import {
   TRACKS,
-  parsePattern,
+  arrange,
   degreeToSemitone,
   midiToFreq,
+  type Arrangement,
   type StepNote,
   type TrackConfig,
 } from './tracks.ts';
 
 const TICK_MS = 25;
 const LOOKAHEAD_S = 0.12;
+/** Crossfade length for every track change (the brief's ~0.4..0.8 s band). */
+const XFADE_S = 0.55;
 /** Tempo travels bpm * (1 ± TEMPO_SPAN/2) across intensity 0..1. */
 const TEMPO_SPAN = 0.24;
 /** Master lowpass: 900 Hz closed .. ~7200 Hz open. */
@@ -40,6 +68,11 @@ const FILTER_OCTAVES = 3;
 /** Per-frame easing toward the intensity target (60 Hz update()). */
 const INTENSITY_EASE = 0.05;
 const MASTER_HEADROOM = 0.9;
+
+/** Home-screen rotation set (shuffle-bag; see playHome()). */
+export const HOME_SET: readonly TrackId[] = ['title', 'home-b', 'home-c'];
+/** Pause-menu hold-muzak rotation (alternating; see playPause()). */
+export const HOLD_SET: readonly TrackId[] = ['hold-a', 'hold-b'];
 
 type VoiceName = 'bass' | 'lead' | 'arp' | 'noise';
 
@@ -50,7 +83,8 @@ interface TonalSpec {
   oct: number;
 }
 
-/** Exhaustive over VoiceName; noise is null because it dispatches to drums. */
+/** Exhaustive over VoiceName; noise is null because it dispatches to drums.
+ *  The lead's wave is the BASE timbre — variants may override it. */
 const TONAL: Record<VoiceName, TonalSpec | null> = {
   bass: { wave: 'triangle', gain: 0.3, oct: 0 },
   lead: { wave: 'square', gain: 0.16, oct: 1 },
@@ -67,13 +101,17 @@ const DRUMS: Record<number, { filter: BiquadFilterType; freq: number; durS: numb
 
 /** Re-roll table for release() — exhaustive, deterministic (no Math.random
  *  in anything the sim might share a frame with). Level family cycles;
- *  scene-bound tracks map to themselves. */
+ *  scene-bound tracks (incl. the home and hold sets) map to themselves. */
 const HANDBACK: Record<TrackId, TrackId> = {
   meadow: 'sewer',
   sewer: 'casino',
   casino: 'castle',
   castle: 'meadow',
   title: 'title',
+  'home-b': 'home-b',
+  'home-c': 'home-c',
+  'hold-a': 'hold-a',
+  'hold-b': 'hold-b',
   cutscene: 'cutscene',
   ending: 'ending',
   boss: 'boss',
@@ -85,34 +123,65 @@ interface ParsedVoice {
   steps: (StepNote | null)[];
 }
 
+/** What is (or should be) playing: a track id plus its arrangement variant. */
+interface Slot {
+  id: TrackId;
+  variant: number;
+}
+
+/** One live scheduled instance of a track: its own bus, its own playhead.
+ *  Crossfades = one layer ramping in while the old ones ramp out. */
+interface Layer {
+  slot: Slot;
+  cfg: TrackConfig;
+  arr: Arrangement;
+  voices: ParsedVoice[];
+  bus: GainNode;
+  beat: number;
+  nextBeatTime: number;
+  /** null = the active layer. Set = fading out; no beats past this time. */
+  fadeEnd: number | null;
+}
+
 export class Music implements MusicLike {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private filter: BiquadFilterNode | null = null;
-  /** Per-play bus: killing it silences everything already queued. */
-  private bus: GainNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
+  private pulse25: PeriodicWave | null = null;
   private timer: number | null = null;
 
-  private current: TrackId | null = null;
+  private layers: Layer[] = [];
+  /** Desired current slot; also the pre-ensure() memory. null = silence. */
+  private want: Slot | null = null;
   /** Takeover stack; null marks "nothing was playing" so release() can stop. */
-  private stack: (TrackId | null)[] = [];
-
-  private beat = 0;
-  private nextBeatTime = 0;
+  private stack: (Slot | null)[] = [];
+  /** Set while parked on hold muzak; remembers what to come back to. */
+  private pauseHold: { back: Slot | null } | null = null;
+  /** Which HOLD_SET entry the next pause gets (alternates). */
+  private holdIdx = 0;
+  /** Shuffle bag for playHome(); drawn by pop() from the end. */
+  private homeBag: TrackId[] = [];
+  private homeLast: TrackId | null = null;
+  /** Seeded LCG state for the shuffle bag — deterministic, no Math.random. */
+  private bagState = 0x5ee0ded;
+  /** Explicit tab-hidden state (visibilitychange), distinct from the
+   *  autoplay-policy 'suspended' the browser starts contexts in. */
+  private suspended = false;
 
   private volume = 0.8;
   private intensityTarget = 0.5;
   private intensityCur = 0.5;
 
-  private cache = new Map<TrackId, ParsedVoice[]>();
+  /** Arrangement + parsed voices per `${id}#${variant}`. */
+  private cache = new Map<string, { arr: Arrangement; voices: ParsedVoice[] }>();
 
   /** Create/resume the AudioContext. Call on a user gesture. A play() issued
    *  before ensure() is remembered and starts here. */
   ensure(): void {
     if (this.ctx) {
-      if (this.ctx.state === 'suspended') void this.ctx.resume();
-      if (this.current !== null && this.bus === null) this.start();
+      if (!this.suspended && this.ctx.state === 'suspended') void this.ctx.resume();
+      if (!this.suspended) this.startWant();
       return;
     }
     const AC = (globalThis as { AudioContext?: typeof AudioContext }).AudioContext;
@@ -130,24 +199,77 @@ export class Music implements MusicLike {
     this.master = master;
     this.filter = filter;
     this.noiseBuf = makeNoiseBuffer(ctx);
-    if (ctx.state === 'suspended') void ctx.resume();
-    if (this.current !== null) this.start();
+    this.pulse25 = makePulseWave(ctx);
+    if (!this.suspended && ctx.state === 'suspended') void ctx.resume();
+    if (!this.suspended) this.startWant();
   }
 
-  /** Stop the current track and loop `id` from its top. Unknown ids throw. */
-  play(id: TrackId): void {
+  /** Crossfade to track `id` (arrangement per `variant`, default 0 = base).
+   *  Unknown ids throw. Re-playing the already-active slot is a no-op — the
+   *  loop keeps rolling (so w1a1 -> w1a2 with equal variants never restarts). */
+  play(id: TrackId, opts?: { variant?: number }): void {
     const cfg: TrackConfig | undefined = TRACKS[id];
     if (cfg === undefined) throw new Error(`Music.play: unknown track "${String(id)}"`);
-    this.current = id;
-    if (!this.ctx) return; // remembered; ensure() will start it
-    this.start();
+    this.want = { id, variant: (opts?.variant ?? 0) >>> 0 };
+    if (!this.ctx || this.suspended) return; // remembered; ensure()/resume() starts it
+    this.startWant();
   }
 
-  stop(): void {
-    this.current = null;
-    this.stack = [];
-    this.killBus();
+  /** Home-screen rotation: deterministic shuffle bag over HOME_SET — all
+   *  three con-man tunes before any repeat, never the same twice running. */
+  playHome(): void {
+    this.play(this.nextHome());
+  }
+
+  /** Pause menu: park the score on the next hold-muzak cassette (alternating
+   *  hold-a/hold-b) and remember what was interrupted. Re-entrant calls while
+   *  already on hold are no-ops. */
+  playPause(): void {
+    if (this.pauseHold) return;
+    this.pauseHold = { back: this.want };
+    const id = HOLD_SET[this.holdIdx % HOLD_SET.length]!;
+    this.holdIdx++;
+    this.play(id);
+  }
+
+  /** Leave the pause menu: crossfade back to the interrupted track+variant
+   *  (its loop restarts from the top — documented, accepted). Safe when not
+   *  paused (no-op) and when pause interrupted silence (fades back to it). */
+  endPause(): void {
+    const hold = this.pauseHold;
+    if (!hold) return;
+    this.pauseHold = null;
+    if (hold.back) this.play(hold.back.id, { variant: hold.back.variant });
+    else this.fadeToSilence();
+  }
+
+  /** Tab hidden: freeze the audio clock and stop the lookahead timer so no
+   *  work piles up while nobody is listening. Safe no-op before ensure(). */
+  suspend(): void {
+    this.suspended = true;
     this.stopTimer();
+    if (this.ctx && this.ctx.state === 'running') void this.ctx.suspend();
+  }
+
+  /** Tab visible again: unfreeze the clock and pick the score back up where
+   *  it stopped. Safe no-op before ensure(). */
+  resume(): void {
+    this.suspended = false;
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') void this.ctx.resume();
+    this.startWant(); // starts anything requested while suspended
+    if (this.layers.length > 0) {
+      this.startTimer();
+      this.tick();
+    }
+  }
+
+  /** Fade everything out (still a crossfade — to silence) and forget state. */
+  stop(): void {
+    this.want = null;
+    this.stack = [];
+    this.pauseHold = null;
+    this.fadeToSilence();
   }
 
   /** 0..1 gameplay intensity; eased in update(), applied to future beats. */
@@ -155,25 +277,25 @@ export class Music implements MusicLike {
     this.intensityTarget = Math.min(1, Math.max(0, v));
   }
 
-  /** Push the current track and play `id` (boss intro, gold-bar fanfares...). */
+  /** Push the current slot and play `id` (boss intro, gold-bar fanfares...). */
   takeover(id: TrackId): void {
-    this.stack.push(this.current);
+    this.stack.push(this.want);
     this.play(id);
   }
 
-  /** Pop the takeover stack and hand back — re-rolled via HANDBACK (see
-   *  header). Popping an empty stack is a programming error and THROWS. */
+  /** Pop the takeover stack and hand back — re-rolled via HANDBACK, keeping
+   *  the interrupted variant (see header). Popping an empty stack is a
+   *  programming error and THROWS. */
   release(): void {
     const prev = this.stack.pop();
     if (prev === undefined) throw new Error('Music.release() without a matching takeover()');
     if (prev === null) {
       // takeover happened over silence; hand silence back
-      this.current = null;
-      this.killBus();
-      this.stopTimer();
+      this.want = null;
+      this.fadeToSilence();
       return;
     }
-    this.play(HANDBACK[prev]);
+    this.play(HANDBACK[prev.id], { variant: prev.variant });
   }
 
   /** 0..1 music volume (prefs calls this; music never imports prefs). */
@@ -193,6 +315,12 @@ export class Music implements MusicLike {
     }
   }
 
+  /** What the module wants playing right now (works pre-ensure, for tests
+   *  and probes). Extra API beyond MusicLike, like setVolume. */
+  nowPlaying(): { id: TrackId; variant: number } | null {
+    return this.want ? { id: this.want.id, variant: this.want.variant } : null;
+  }
+
   // -- internals ------------------------------------------------------------
 
   private tempoScale(): number {
@@ -203,33 +331,115 @@ export class Music implements MusicLike {
     return FILTER_BASE_HZ * Math.pow(2, this.intensityCur * FILTER_OCTAVES);
   }
 
-  private start(): void {
+  /** Draw one uint32 from the shuffle-bag stream. */
+  private bagDraw(): number {
+    this.bagState = (Math.imul(this.bagState, 1664525) + 1013904223) >>> 0;
+    return this.bagState;
+  }
+
+  private nextHome(): TrackId {
+    if (this.homeBag.length === 0) {
+      const bag = [...HOME_SET];
+      for (let i = bag.length - 1; i > 0; i--) {
+        const j = this.bagDraw() % (i + 1);
+        const a = bag[i]!;
+        bag[i] = bag[j]!;
+        bag[j] = a;
+      }
+      // Bag boundary: never the same tune twice in a row (we pop the tail).
+      if (bag.length > 1 && bag[bag.length - 1] === this.homeLast) {
+        const a = bag[bag.length - 1]!;
+        bag[bag.length - 1] = bag[0]!;
+        bag[0] = a;
+      }
+      this.homeBag = bag;
+    }
+    const id = this.homeBag.pop()!;
+    this.homeLast = id;
+    return id;
+  }
+
+  /** The layer currently ramping in / holding (not fading), if any. */
+  private topLive(): Layer | null {
+    for (let i = this.layers.length - 1; i >= 0; i--) {
+      const l = this.layers[i]!;
+      if (l.fadeEnd === null) return l;
+    }
+    return null;
+  }
+
+  /** Bring reality in line with `want`: crossfade the live layers out and a
+   *  fresh layer of the wanted slot in. No-op when it already plays. */
+  private startWant(): void {
     const ctx = this.ctx;
-    if (!ctx || this.current === null) return;
-    this.killBus();
+    if (!ctx || this.suspended) return;
+    const want = this.want;
+    if (want === null) {
+      this.fadeToSilence();
+      return;
+    }
+    const top = this.topLive();
+    if (top && top.slot.id === want.id && top.slot.variant === want.variant) return;
+    const now = ctx.currentTime;
+    this.fadeLive(now);
+    const { arr, voices } = this.arrangementOf(want);
     const bus = ctx.createGain();
-    bus.gain.value = 1;
+    bus.gain.setValueAtTime(0.0001, now);
+    bus.gain.linearRampToValueAtTime(1, now + XFADE_S);
     if (this.filter) bus.connect(this.filter);
-    this.bus = bus;
-    this.beat = 0;
-    this.nextBeatTime = ctx.currentTime + 0.06;
+    this.layers.push({
+      slot: { id: want.id, variant: want.variant },
+      cfg: TRACKS[want.id],
+      arr,
+      voices,
+      bus,
+      beat: 0,
+      nextBeatTime: now + 0.06,
+      fadeEnd: null,
+    });
     this.startTimer();
     this.tick(); // fill the lookahead window immediately
   }
 
-  private killBus(): void {
+  /** Ramp every live layer's bus down over the crossfade window and give it a
+   *  scheduling deadline. Gains RAMP (setTargetAtTime), never step. */
+  private fadeLive(now: number): void {
+    for (const l of this.layers) {
+      if (l.fadeEnd !== null) continue;
+      l.fadeEnd = now + XFADE_S;
+      const g = l.bus.gain as AudioParam & { cancelAndHoldAtTime?: (t: number) => AudioParam };
+      if (typeof g.cancelAndHoldAtTime === 'function') g.cancelAndHoldAtTime(now);
+      g.setTargetAtTime(0.0001, now, XFADE_S / 4);
+    }
+  }
+
+  private fadeToSilence(): void {
     const ctx = this.ctx;
-    const bus = this.bus;
-    this.bus = null;
-    if (!ctx || !bus) return;
-    // Quick fade kills queued-but-unplayed notes without a click, then the
-    // branch is dropped whole.
-    bus.gain.setTargetAtTime(0.0001, ctx.currentTime, 0.02);
-    setTimeout(() => bus.disconnect(), 250);
+    this.want = null;
+    if (!ctx) return;
+    this.fadeLive(ctx.currentTime);
+    // The timer keeps running so fading layers finish their last scheduled
+    // beats; tick() prunes them and stops itself when the room is empty.
+  }
+
+  private arrangementOf(slot: Slot): { arr: Arrangement; voices: ParsedVoice[] } {
+    const key = `${slot.id}#${slot.variant}`;
+    const hit = this.cache.get(key);
+    if (hit) return hit;
+    const arr = arrange(TRACKS[slot.id], slot.variant);
+    const voices: ParsedVoice[] = [
+      { name: 'bass', div: arr.bass.div, steps: arr.bass.steps },
+      { name: 'lead', div: arr.lead.div, steps: arr.lead.steps },
+    ];
+    if (arr.arp) voices.push({ name: 'arp', div: arr.arp.div, steps: arr.arp.steps });
+    if (arr.noise) voices.push({ name: 'noise', div: arr.noise.div, steps: arr.noise.steps });
+    const entry = { arr, voices };
+    this.cache.set(key, entry);
+    return entry;
   }
 
   private startTimer(): void {
-    if (this.timer !== null) return;
+    if (this.timer !== null || this.suspended) return;
     this.timer = setInterval(this.tick, TICK_MS) as unknown as number;
   }
 
@@ -239,83 +449,86 @@ export class Music implements MusicLike {
     this.timer = null;
   }
 
-  /** Arrow property: stable identity for setInterval. */
+  /** Arrow property: stable identity for setInterval. Schedules EVERY live
+   *  layer (that is what makes crossfades overlap musically), prunes layers
+   *  whose fade has finished, and stops itself when nothing remains. */
   private tick = (): void => {
     const ctx = this.ctx;
-    if (!ctx || this.bus === null || this.current === null) return;
-    const cfg = TRACKS[this.current];
-    const voices = this.voicesOf(this.current);
-    const horizon = ctx.currentTime + LOOKAHEAD_S;
-    while (this.nextBeatTime < horizon) {
-      const beatDur = 60 / (cfg.bpm * this.tempoScale());
-      this.scheduleBeat(cfg, voices, this.beat, this.nextBeatTime, beatDur);
-      this.nextBeatTime += beatDur;
-      this.beat++;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const horizon = now + LOOKAHEAD_S;
+    for (const l of this.layers) {
+      const limit = l.fadeEnd === null ? horizon : Math.min(horizon, l.fadeEnd);
+      while (l.nextBeatTime < limit) {
+        const beatDur = 60 / (l.cfg.bpm * this.tempoScale());
+        this.scheduleBeat(l, l.beat, l.nextBeatTime, beatDur);
+        l.nextBeatTime += beatDur;
+        l.beat++;
+      }
     }
+    let pruned = false;
+    for (const l of this.layers) {
+      if (l.fadeEnd !== null && now > l.fadeEnd + 0.25) {
+        l.bus.disconnect();
+        pruned = true;
+      }
+    }
+    if (pruned) {
+      this.layers = this.layers.filter((l) => !(l.fadeEnd !== null && now > l.fadeEnd + 0.25));
+    }
+    if (this.layers.length === 0) this.stopTimer();
   };
 
-  private voicesOf(id: TrackId): ParsedVoice[] {
-    const hit = this.cache.get(id);
-    if (hit) return hit;
-    const cfg = TRACKS[id];
-    const v: ParsedVoice[] = [
-      { name: 'bass', div: cfg.bass.div, steps: parsePattern(cfg.bass) },
-      { name: 'lead', div: cfg.lead.div, steps: parsePattern(cfg.lead) },
-    ];
-    if (cfg.arp) v.push({ name: 'arp', div: cfg.arp.div, steps: parsePattern(cfg.arp) });
-    if (cfg.noise) v.push({ name: 'noise', div: cfg.noise.div, steps: parsePattern(cfg.noise) });
-    this.cache.set(id, v);
-    return v;
-  }
-
-  private scheduleBeat(
-    cfg: TrackConfig,
-    voices: ParsedVoice[],
-    beat: number,
-    tBeat: number,
-    beatDur: number,
-  ): void {
-    for (const v of voices) {
+  private scheduleBeat(l: Layer, beat: number, tBeat: number, beatDur: number): void {
+    for (const v of l.voices) {
       const stepDur = beatDur / v.div;
       for (let s = 0; s < v.div; s++) {
         const idx = (beat * v.div + s) % v.steps.length;
         const note = v.steps[idx];
         if (note === null || note === undefined) continue;
-        const swung = s % 2 === 1 ? (cfg.swing ?? 0) * stepDur : 0;
+        const swung = s % 2 === 1 ? l.arr.swing * stepDur : 0;
         const t = tBeat + s * stepDur + swung;
-        if (v.name === 'noise') this.drum(note, t);
-        else this.note(cfg, v.name, note, t, stepDur);
+        if (v.name === 'noise') this.drum(l, note, t);
+        else this.note(l, v.name, note, idx, t, stepDur);
       }
     }
   }
 
-  private note(cfg: TrackConfig, name: VoiceName, n: StepNote, t: number, stepDur: number): void {
+  private note(l: Layer, name: VoiceName, n: StepNote, idx: number, t: number, stepDur: number): void {
     const ctx = this.ctx;
-    const bus = this.bus;
-    if (!ctx || !bus) return;
+    if (!ctx) return;
     const spec = TONAL[name];
     if (spec === null) throw new Error(`music: voice "${name}" is not tonal`);
-    const midi = cfg.root + degreeToSemitone(cfg.scale, n.deg, n.oct) + 12 * spec.oct;
+    let midi = l.cfg.root + l.arr.transpose + degreeToSemitone(l.cfg.scale, n.deg, n.oct) + 12 * spec.oct;
+    // THE SOUR-NOTE GAG: at most one declared off-scale nudge per track,
+    // applied at this exact pattern index — once per loop, deterministic.
+    const sour = l.cfg.sourNotes?.find((sn) => sn.voice === name && sn.step === idx);
+    if (sour) midi += sour.semi;
     const freq = midiToFreq(midi);
     const durS = Math.max(0.04, n.len * stepDur * 0.92);
     const o = ctx.createOscillator();
-    o.type = spec.wave;
+    if (name === 'lead' && l.arr.leadTimbre === 'pulse25' && this.pulse25 !== null) {
+      o.setPeriodicWave(this.pulse25);
+    } else if (name === 'lead' && l.arr.leadTimbre !== 'pulse25') {
+      o.type = l.arr.leadTimbre;
+    } else {
+      o.type = spec.wave;
+    }
     o.frequency.value = freq;
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
     g.gain.linearRampToValueAtTime(spec.gain, t + 0.006);
     g.gain.exponentialRampToValueAtTime(0.0001, t + durS);
     o.connect(g);
-    g.connect(bus);
+    g.connect(l.bus);
     o.start(t);
     o.stop(t + durS + 0.03);
   }
 
-  private drum(n: StepNote, t: number): void {
+  private drum(l: Layer, n: StepNote, t: number): void {
     const ctx = this.ctx;
-    const bus = this.bus;
     const buf = this.noiseBuf;
-    if (!ctx || !bus || !buf) return;
+    if (!ctx || !buf) return;
     const kind = DRUMS[n.deg];
     if (kind === undefined) {
       throw new Error(`music: noise degree ${n.deg} is not a drum (0=hat, 1=snare, 2=thud)`);
@@ -331,7 +544,7 @@ export class Music implements MusicLike {
     g.gain.exponentialRampToValueAtTime(0.0001, t + kind.durS);
     src.connect(f);
     f.connect(g);
-    g.connect(bus);
+    g.connect(l.bus);
     src.start(t);
     src.stop(t + kind.durS + 0.02);
   }
@@ -348,4 +561,16 @@ function makeNoiseBuffer(ctx: AudioContext): AudioBuffer {
     data[i] = (s / 4294967296) * 2 - 1;
   }
   return buf;
+}
+
+/** 25%-duty pulse as a periodic wave (Fourier magnitudes sin(nπd)/n) — the
+ *  variation engine's third lead timbre, nasal next to square and triangle. */
+function makePulseWave(ctx: AudioContext): PeriodicWave {
+  const N = 32;
+  const real = new Float32Array(N);
+  const imag = new Float32Array(N);
+  for (let n = 1; n < N; n++) {
+    imag[n] = (2 / (n * Math.PI)) * Math.sin(n * Math.PI * 0.25);
+  }
+  return ctx.createPeriodicWave(real, imag);
 }

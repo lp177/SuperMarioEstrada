@@ -17,13 +17,17 @@ export type SceneName = 'title' | 'worldmap' | 'cutscene' | 'level';
 
 export type TrackId =
   | 'title'
+  | 'home-b'   // home-screen rotation set: title + these two
+  | 'home-c'
   | 'meadow'
   | 'sewer'
   | 'casino'
   | 'castle'
   | 'boss'
   | 'cutscene'
-  | 'ending';
+  | 'ending'
+  | 'hold-a'   // pause-menu rotation: call-center hold muzak
+  | 'hold-b';
 
 export type CutsceneId = 'intro' | 'w1-end' | 'w2-end' | 'w3-end' | 'ending';
 
@@ -417,7 +421,20 @@ export interface SfxLike {
 
 export interface MusicLike {
   ensure(): void;
-  play(track: TrackId): void;
+  /** Start a track. `variant` deterministically mutates the arrangement
+   *  (transposition, bass placement, lead timbre, swing, density) so every
+   *  act sounds like its world but never identical. ALL track changes
+   *  crossfade — no hard stops audible anywhere. */
+  play(track: TrackId, opts?: { variant?: number }): void;
+  /** Home-screen/world-map rotation over the title set (shuffle-bag). */
+  playHome(): void;
+  /** Pause menu: crossfade into rotating hold muzak; endPause returns to the
+   *  interrupted track+variant. */
+  playPause(): void;
+  endPause(): void;
+  /** Tab lost/gained focus: suspend/resume the whole audio clock. */
+  suspend(): void;
+  resume(): void;
   stop(): void;
   /** 0..1 gameplay intensity; modulates tempo/filter within the track. */
   setIntensity(v: number): void;

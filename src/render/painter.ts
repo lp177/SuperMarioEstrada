@@ -11,6 +11,7 @@ import type {
   BossLike,
   BossPhase,
   CameraState,
+  EnemyKind,
   EntityKind,
   EntityLike,
   LevelLike,
@@ -424,164 +425,690 @@ function starPath(ctx: Ctx, x: number, y: number, rOut: number, rIn: number): vo
   ctx.closePath();
 }
 
-const ENTITY_DRAW: Record<EntityKind, EDraw> = {
-  lobbyist: (ctx, e) => {
-    // a briefcase that walks: sunglasses, tie, no soul
-    ctx.scale(e.facing, 1);
-    const step = Math.floor(e.animT / 8) % 2;
-    ctx.fillStyle = OUT;
-    ctx.fillRect(-6 + (step === 0 ? 0 : 1), 6, 4, 3);
-    ctx.fillRect(2 - (step === 0 ? 0 : 1), 6, 4, 3);
-    ctx.strokeStyle = OUT;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(0, -8, 3, Math.PI, 0);
-    ctx.stroke();
-    orect(ctx, -8, -7, 16, 14, '#a8722f');
-    ctx.fillStyle = '#7c4f1d';
-    ctx.fillRect(-8, -1, 16, 2); // latch band
-    ctx.fillStyle = '#ffd34e';
-    ctx.fillRect(-1, -2, 3, 4); // clasp
-    ctx.fillStyle = OUT; // sunglasses band
-    ctx.fillRect(-7, -5, 13, 3);
-    ctx.fillStyle = '#3a3f4d';
-    ctx.fillRect(-5, -4, 4, 2);
-    ctx.fillRect(1, -4, 4, 2);
-    tri(ctx, -1, 1, 2, 1, 0.5, 6, '#c22e2e'); // tie
+// ---------------------------------------------------------------------------
+// ENTOURAGE DISGUISES — every enemy is the world producer's crew in a bad
+// costume (the AGENTS.md table). Mechanics and hitboxes are FROZEN: these
+// skins change pixels only, dispatched per theme through an exhaustive
+// Record<EnemyKind, Record<ThemeId, SkinDraw>> — an unknown theme does not
+// compile. Budget rule: each disguise carries exactly ONE readable costume
+// tell (back zipper / HELLO-I'M tag / human shoes / costume head ajar); prop
+// enemies get one set-dressing tell instead (tape label, price sticker).
+// The castle 'rat' is the sanctioned exception: a REAL capybara, no costume.
+// ---------------------------------------------------------------------------
+
+type SkinDraw = (ctx: Ctx, e: EntityLike, frame: number) => void;
+
+/** Two-frame walk cycle off the free-running animT. */
+function walkStep(e: EntityLike, period: number): number {
+  return Math.floor(e.animT / period) % 2;
+}
+
+// --- the canonical costume tells (small; pick ONE per disguise) ---
+
+/** Open back zipper: dark gap, someone's skin showing, dangling pull ring. */
+function tellZipper(ctx: Ctx, x: number, y: number, h: number): void {
+  ctx.fillStyle = OUT;
+  ctx.fillRect(x, y, 3, h);
+  ctx.fillStyle = '#f2b98a';
+  ctx.fillRect(x + 1, y + 1, 1.5, h - 2);
+  disc(ctx, x + 1.5, y + h + 1, 1.5, '#c9ccd8', OUT);
+}
+
+/** Convention name tag: white card, red HELLO-I'M band, the name. */
+function tellTag(ctx: Ctx, x: number, y: number, w: number, name: string): void {
+  orect(ctx, x, y, w, 8, '#f5f0e6');
+  ctx.fillStyle = '#c22e2e';
+  ctx.fillRect(x + 1, y + 1, w - 2, 2.5);
+  txt(ctx, name, x + w / 2, y + 5.5, 3, OUT);
+}
+
+/** Polished human dress shoes (sock sliver included) where creature feet
+ *  should be. `y` is the top of the shoe line. */
+function tellShoes(ctx: Ctx, step: number, y: number): void {
+  ctx.fillStyle = '#f5f0e6';
+  ctx.fillRect(-5 + step, y - 1, 3, 1);
+  ctx.fillRect(2 - step, y - 1, 3, 1);
+  ctx.fillStyle = '#2a2017';
+  ctx.fillRect(-6 + step, y, 5, 2);
+  ctx.fillRect(1 - step, y, 5, 2);
+}
+
+// --- shared costume chassis ---
+
+/** Goomba-onesie dome with the sewn-on face panel (brows + costume eyes). */
+function onesieDome(ctx: Ctx, fill: string): void {
+  disc(ctx, 0, -2, 8, fill, OUT);
+  orect(ctx, -5, 1, 10, 6, '#e8caa0');
+  ctx.fillStyle = OUT;
+  ctx.fillRect(-4, 2, 3, 1); // costume-kit angry brows
+  ctx.fillRect(1, 2, 3, 1);
+  ctx.fillRect(-3, 3, 2, 2); // felt eyes
+  ctx.fillRect(1, 3, 2, 2);
+}
+
+/** Turtle-suit chassis: costume legs, shell disc, hood head, eye. */
+function turtleBase(ctx: Ctx, e: EntityLike, shellFill: string): void {
+  const step = walkStep(e, 9);
+  ctx.fillStyle = '#2a5f2a';
+  ctx.fillRect(-5 + step, 5, 4, 3);
+  ctx.fillRect(1 - step, 5, 4, 3);
+  disc(ctx, -1, 0, 6.5, shellFill, OUT);
+  orect(ctx, 3, -6, 8, 8, '#7dc86f');
+  ctx.fillStyle = OUT;
+  ctx.fillRect(8, -4, 2, 2);
+}
+
+/** Plant stalk rising from the pipe mouth. */
+function plantStalk(ctx: Ctx, color: string): void {
+  ctx.fillStyle = color;
+  ctx.fillRect(-2, 2, 4, 12);
+}
+
+/** The chomp cycle shared by plant heads (open jaw / pressed shut). */
+function plantChomp(ctx: Ctx, e: EntityLike): void {
+  if (Math.floor(e.animT / 14) % 2 === 0) {
+    tri(ctx, -5, -4, -1, -4, -3, -1, '#f2efe4');
+    tri(ctx, 1, -4, 5, -4, 3, -1, '#f2efe4');
+    ctx.fillStyle = '#7a1f1f';
+    ctx.fillRect(-4, -3, 8, 2);
+  } else {
+    ctx.fillStyle = '#f2efe4';
+    ctx.fillRect(-5, -4, 10, 2);
+  }
+}
+
+/** Drone rotor pair + hubs (blur width off the free-running clock). */
+function droneRotors(ctx: Ctx, e: EntityLike): void {
+  const r = Math.abs(Math.sin(e.animT / 2)) * 5 + 1;
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-5 - r, -8);
+  ctx.lineTo(-5 + r, -8);
+  ctx.moveTo(5 - r, -8);
+  ctx.lineTo(5 + r, -8);
+  ctx.stroke();
+  ctx.fillStyle = OUT;
+  ctx.fillRect(-6, -8, 2, 3);
+  ctx.fillRect(4, -8, 2, 3);
+}
+
+/** Rat-costume chassis: tail, body ellipse, ear, eye, nose. */
+function ratBody(ctx: Ctx, e: EntityLike, fur: string): void {
+  ctx.strokeStyle = '#ff9bb0'; // tail first (behind)
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-6, 1);
+  ctx.quadraticCurveTo(-11, -2 + Math.sin(e.animT / 6) * 2, -14, 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(0, 1, 7, 4, 0, 0, Math.PI * 2);
+  ctx.fillStyle = fur;
+  ctx.fill();
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2;
+  ctx.stroke();
+  disc(ctx, 3, -3, 2, fur, OUT); // ear
+  ctx.fillStyle = OUT;
+  ctx.fillRect(5, -1, 2, 2); // beady eye
+  disc(ctx, 7.5, 1, 1, '#ff9bb0'); // nose
+}
+
+function ratFeet(ctx: Ctx, e: EntityLike): void {
+  const step = walkStep(e, 4);
+  ctx.fillStyle = OUT;
+  ctx.fillRect(-4 + step, 4, 2, 2);
+  ctx.fillRect(2 - step, 4, 2, 2);
+}
+
+/** Googly eyes perched on a hopping stack, pupils tracking `facing`. */
+function stackEyes(ctx: Ctx, e: EntityLike, y: number): void {
+  disc(ctx, -3, y, 2, '#ffffff', OUT);
+  disc(ctx, 3, y, 2, '#ffffff', OUT);
+  disc(ctx, -3 + e.facing, y, 1, OUT);
+  disc(ctx, 3 + e.facing, y, 1, OUT);
+}
+
+/** Crusher slam-blur streaks while dropping. */
+function slamBlur(ctx: Ctx, e: EntityLike): void {
+  if (e.vy > 2) {
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.fillRect(-9, -26, 3, 14);
+    ctx.fillRect(6, -26, 3, 14);
+  }
+}
+
+const ENEMY_SKIN: Record<EnemyKind, Record<ThemeId, SkinDraw>> = {
+  lobbyist: {
+    // Cousin Fabio in a goomba onesie — TELL: the back zipper gapes open.
+    meadow: (ctx, e) => {
+      const step = walkStep(e, 8);
+      ctx.fillStyle = '#6f4626'; // costume booties
+      ctx.fillRect(-6 + step, 6, 4, 3);
+      ctx.fillRect(2 - step, 6, 4, 3);
+      onesieDome(ctx, '#a8722f');
+      tellZipper(ctx, -8, -4, 6);
+    },
+    // Junior lawyer, brown suit, zero costume effort — TELL: giant HELLO tag.
+    sewer: (ctx, e) => {
+      const step = walkStep(e, 6); // billable scurry
+      ctx.fillStyle = '#2a2017';
+      ctx.fillRect(-5 + step, 6, 4, 3);
+      ctx.fillRect(1 - step, 6, 4, 3);
+      orect(ctx, -6, -4, 12, 10, '#6f4626'); // suit, off the rack
+      ctx.fillStyle = '#f2b98a'; // head
+      ctx.fillRect(-4, -10, 8, 6);
+      ctx.fillStyle = '#3a2a1e'; // severe side-part
+      ctx.fillRect(-4, -10, 8, 2);
+      ctx.fillRect(-4, -8, 2, 3);
+      ctx.fillStyle = OUT;
+      ctx.fillRect(1, -8, 2, 2); // billable-hours stare
+      orect(ctx, 5, 0, 6, 5, '#8a5a2b'); // briefcase
+      tellTag(ctx, -7, -2, 12, 'ESQ.');
+    },
+    // Pit-boss nephew, velvet dome + gold chain — TELL: dad's dress shoes.
+    casino: (ctx, e) => {
+      const step = walkStep(e, 8);
+      tellShoes(ctx, step, 6);
+      onesieDome(ctx, '#6d2440');
+      ctx.fillStyle = '#3a2a1e'; // painted-on slicked hair
+      ctx.fillRect(-6, -9, 12, 3);
+      for (const [gx, gy] of [[-4.5, -0.5], [-2, 0.5], [1, 0.5], [3.5, -0.5]] as const) {
+        disc(ctx, gx, gy, 1.2, '#ffd34e'); // the chain
+      }
+    },
+    // Army buddy in a barrel costume — TELL: the lid sits ajar, hair out.
+    castle: (ctx, e) => {
+      const step = walkStep(e, 9);
+      ctx.fillStyle = '#2a2017'; // combat boots
+      ctx.fillRect(-6 + step, 6, 5, 3);
+      ctx.fillRect(1 - step, 6, 5, 3);
+      orect(ctx, -7, -6, 14, 12, '#8a5a2b'); // the barrel
+      ctx.fillStyle = '#6f4626'; // staves
+      ctx.fillRect(-3, -5, 1, 10);
+      ctx.fillRect(2, -5, 1, 10);
+      ctx.fillStyle = '#c9a227'; // hoops
+      ctx.fillRect(-7, -3, 14, 1);
+      ctx.fillRect(-7, 3, 14, 1);
+      ctx.fillStyle = OUT; // face hole
+      ctx.fillRect(-2, -2, 7, 5);
+      ctx.fillStyle = '#f2b98a';
+      ctx.fillRect(-1, -1, 5, 3);
+      ctx.fillStyle = OUT;
+      ctx.fillRect(2, 0, 1.5, 1.5); // eye at the hole
+      ctx.fillStyle = '#3a2a1e'; // TELL: hair escaping under the lid
+      ctx.fillRect(-3, -8, 5, 2);
+      ctx.save(); // the lid, ajar
+      ctx.translate(0, -7);
+      ctx.rotate(-0.25);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 8, 2.5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#6f4626';
+      ctx.fill();
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+    },
   },
 
-  pollster: (ctx, e) => {
-    ctx.scale(e.facing, 1);
-    const step = Math.floor(e.animT / 9) % 2;
-    ctx.fillStyle = '#2a5f2a';
-    ctx.fillRect(-5 + step, 5, 4, 3);
-    ctx.fillRect(1 - step, 5, 4, 3);
-    disc(ctx, -1, 0, 6.5, '#3d8f3d', OUT); // shell
-    ctx.fillStyle = '#2f6f2f';
-    ctx.fillRect(-6, -1, 10, 2);
-    orect(ctx, 3, -6, 8, 8, '#7dc86f'); // head
-    ctx.fillStyle = OUT;
-    ctx.fillRect(8, -4, 2, 2); // eye
-    orect(ctx, 2, -10, 10, 5, '#d8382a'); // the cap
-    txt(ctx, 'MKGA', 7, -7.5, 3, '#ffffff');
+  pollster: {
+    // Estrada's agent: beret + script-taped shell — TELL: shell zipper.
+    meadow: (ctx, e) => {
+      turtleBase(ctx, e, '#3d8f3d');
+      ctx.fillStyle = '#f5f0e6'; // script pages taped over the shell
+      ctx.fillRect(-4, -4, 4, 5);
+      ctx.fillRect(0, -2, 4, 5);
+      ctx.fillStyle = '#b8b2a6';
+      ctx.fillRect(-3, -3, 2, 1);
+      ctx.fillRect(-3, -1, 2, 1);
+      ctx.fillRect(1, -1, 2, 1);
+      ctx.fillRect(1, 1, 2, 1);
+      ctx.fillStyle = '#2a2433'; // beret, artistic tilt
+      ctx.beginPath();
+      ctx.ellipse(6, -7, 5, 2.2, -0.12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      tellZipper(ctx, -7, -3, 5);
+    },
+    // Campaign volunteer, the red cap — TELL: HELLO badge on the shell.
+    sewer: (ctx, e) => {
+      turtleBase(ctx, e, '#3d8f3d');
+      orect(ctx, 2, -10, 10, 5, '#d8382a'); // the cap
+      txt(ctx, 'MKGA', 7, -7.5, 3, '#ffffff');
+      tellTag(ctx, -7, -3, 10, 'VOL.3');
+    },
+    // Croupier turtle: bow tie + card-back shell — TELL: human shoes.
+    casino: (ctx, e) => {
+      const step = walkStep(e, 9);
+      tellShoes(ctx, step, 6);
+      disc(ctx, -1, 0, 6.5, '#2a4fd8', OUT); // card-back shell
+      ctx.strokeStyle = '#f2f2f2'; // filigree border
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-4, -3, 6, 6);
+      ctx.strokeRect(-2.5, -1.5, 3, 3);
+      orect(ctx, 3, -6, 8, 8, '#7dc86f'); // head
+      ctx.fillStyle = OUT;
+      ctx.fillRect(8, -4, 2, 2); // eye
+      tri(ctx, 4, -1, 4, 3, 1, 1, OUT); // bow tie
+      tri(ctx, 4, -1, 4, 3, 7, 1, OUT);
+      disc(ctx, 4, 1, 1, '#c22e2e');
+    },
+    // Son #01 in the jersey shell — TELL: hood ajar, the family chin out.
+    castle: (ctx, e) => {
+      const step = walkStep(e, 9);
+      ctx.fillStyle = '#2a5f2a';
+      ctx.fillRect(-5 + step, 5, 4, 3);
+      ctx.fillRect(1 - step, 5, 4, 3);
+      disc(ctx, -1, 0, 6.5, '#2fae5c', OUT); // jersey shell
+      ctx.fillStyle = '#ffd34e';
+      ctx.fillRect(-5, -2, 9, 4);
+      txt(ctx, '01', -0.5, 0, 4, '#2a4fd8');
+      orect(ctx, 3, -6, 8, 8, '#7dc86f'); // turtle hood…
+      ctx.fillStyle = '#f2b98a'; // TELL: …riding up a very human chin
+      ctx.fillRect(6, 1, 6, 3);
+      ctx.fillStyle = OUT;
+      ctx.fillRect(3, 0, 8, 1); // hood seam
+      ctx.fillStyle = '#f2c14e'; // mini aviators, like dad
+      ctx.fillRect(4, -4, 8, 1);
+      ctx.fillStyle = '#2a2f3d';
+      ctx.fillRect(5, -4, 3, 3);
+      ctx.fillRect(9, -4, 3, 3);
+    },
   },
 
-  lawyer: (ctx, e) => {
-    // pin-striped piranha plant, billing by the bite
-    ctx.fillStyle = '#2f6f2f';
-    ctx.fillRect(-2, 2, 4, 12); // stalk
-    orect(ctx, -11, 7, 7, 6, '#8a5a2b'); // briefcase leaves
-    orect(ctx, 4, 7, 7, 6, '#8a5a2b');
-    disc(ctx, 0, -4, 8, '#28304f', OUT); // suited head
-    ctx.strokeStyle = 'rgba(255,255,255,0.45)';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    for (const px of [-4, 0, 4]) {
-      ctx.moveTo(px, -11);
-      ctx.lineTo(px, 2);
-    }
-    ctx.stroke();
-    const open = Math.floor(e.animT / 14) % 2 === 0;
-    if (open) {
-      tri(ctx, -5, -4, -1, -4, -3, -1, '#f2efe4'); // chompers
-      tri(ctx, 1, -4, 5, -4, 3, -1, '#f2efe4');
-      ctx.fillStyle = '#7a1f1f';
-      ctx.fillRect(-4, -3, 8, 2);
-    } else {
-      ctx.fillStyle = '#f2efe4';
-      ctx.fillRect(-5, -4, 10, 2);
-    }
-    tri(ctx, -1, 3, 2, 3, 0.5, 8, '#c22e2e'); // tie
+  lawyer: {
+    // The makeup artist: powder-puff head, dabbing — TELL: HELLO tag.
+    meadow: (ctx, e) => {
+      plantStalk(ctx, '#2f6f2f');
+      orect(ctx, -11, 8, 7, 5, '#e8b4c8'); // compact-case leaf
+      orect(ctx, 4, 8, 7, 5, '#c9ccd8'); // hand-mirror leaf
+      ctx.fillStyle = '#f2f2f2';
+      ctx.fillRect(5, 9, 5, 3);
+      const dab = Math.floor(e.animT / 14) % 2 === 0 ? 2 : 0;
+      disc(ctx, 0, -5 + dab, 7, '#ff9bb0', OUT); // the puff
+      disc(ctx, -3, -8 + dab, 2, '#ffc4d4');
+      disc(ctx, 3, -7 + dab, 2, '#ffc4d4');
+      if (dab === 2) { // powder poof
+        disc(ctx, -6, -13, 1.5, '#f5f0e6');
+        disc(ctx, 0, -15, 1.5, '#f5f0e6');
+        disc(ctx, 6, -13, 1.5, '#f5f0e6');
+      }
+      tellTag(ctx, -6, 0, 12, 'M.U.A.');
+    },
+    // THE lawyer: pinstripe sleeve, briefcase jaws — TELL: sleeve zipper.
+    sewer: (ctx, e) => {
+      plantStalk(ctx, '#28304f');
+      ctx.fillStyle = 'rgba(255,255,255,0.45)'; // pinstripes
+      ctx.fillRect(-1, 3, 1, 11);
+      ctx.fillRect(1, 3, 1, 11);
+      orect(ctx, -11, 7, 7, 6, '#8a5a2b'); // filing leaves
+      orect(ctx, 4, 7, 7, 6, '#8a5a2b');
+      if (Math.floor(e.animT / 14) % 2 === 0) { // jaws open
+        orect(ctx, -7, -13, 14, 6, '#6f4626');
+        orect(ctx, -7, -3, 14, 6, '#8a5a2b');
+        ctx.fillStyle = '#f2efe4'; // discovery documents
+        ctx.fillRect(-5, -6, 10, 3);
+        txt(ctx, 'OBJECTION!', 0, -16, 3, '#c22e2e');
+      } else {
+        orect(ctx, -7, -9, 14, 9, '#8a5a2b'); // case pressed shut
+        ctx.fillStyle = '#ffd34e';
+        ctx.fillRect(-1, -6, 3, 3); // clasp
+      }
+      tellZipper(ctx, -1.5, 4, 7);
+    },
+    // The waitress plant, serving subpoenas — TELL: HELLO 'DEB' tag.
+    casino: (ctx, e) => {
+      plantStalk(ctx, '#2f6f2f');
+      orect(ctx, 4, 8, 7, 5, '#2f6f2f'); // plain leaf
+      disc(ctx, -8, 10, 4.5, '#c9ccd8', OUT); // serving-tray leaf
+      ctx.fillStyle = '#f5f0e6'; // the subpoena
+      ctx.fillRect(-10, 4, 5, 5);
+      disc(ctx, -7.5, 6, 1, '#c22e2e'); // wax seal
+      disc(ctx, 0, -4, 8, '#3d8f3d', OUT);
+      plantChomp(ctx, e);
+      ctx.fillStyle = '#f5f0e6'; // doily cap
+      ctx.fillRect(-5, -12, 10, 2);
+      disc(ctx, 5, -11, 1.8, '#c22e2e'); // bow
+      tellTag(ctx, 3, -1, 10, 'DEB');
+    },
+    // The general plant: peaked cap + medals — TELL: chin under the seam.
+    castle: (ctx, e) => {
+      plantStalk(ctx, '#57713a');
+      orect(ctx, -11, 7, 7, 6, '#57713a'); // epaulette leaves
+      orect(ctx, 4, 7, 7, 6, '#57713a');
+      ctx.fillStyle = '#ffd34e'; // gold fringe
+      ctx.fillRect(-10, 12, 5, 1);
+      ctx.fillRect(5, 12, 5, 1);
+      disc(ctx, 0, -4, 8, '#57713a', OUT);
+      plantChomp(ctx, e);
+      ctx.fillStyle = '#3a5a2a'; // peaked cap
+      ctx.fillRect(-6, -14, 12, 4);
+      ctx.fillStyle = OUT;
+      ctx.fillRect(-7, -10, 14, 1.5); // brim
+      ctx.fillStyle = '#c22e2e';
+      ctx.fillRect(-1, -13, 2, 2); // star pin
+      disc(ctx, -2, 6, 1.2, '#ffd34e'); // medals on the stalk
+      disc(ctx, 1, 8, 1.2, '#c9ccd8');
+      ctx.fillStyle = '#f2b98a'; // TELL: human chin, jutting (family trait)
+      ctx.fillRect(-2, 3, 6, 2);
+      ctx.fillStyle = OUT;
+      ctx.fillRect(-4, 2.5, 9, 1); // costume seam
+    },
   },
 
-  paparazzo: (ctx, e) => {
-    ctx.scale(e.facing, 1);
-    const t = e.animT;
-    const r = Math.abs(Math.sin(t / 2)) * 5 + 1;
-    ctx.strokeStyle = OUT; // rotor blur
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-5 - r, -8);
-    ctx.lineTo(-5 + r, -8);
-    ctx.moveTo(5 - r, -8);
-    ctx.lineTo(5 + r, -8);
-    ctx.stroke();
-    ctx.fillStyle = OUT;
-    ctx.fillRect(-6, -8, 2, 3);
-    ctx.fillRect(4, -8, 2, 3);
-    orect(ctx, -8, -5, 16, 10, '#565a68');
-    disc(ctx, 4, 0, 3.5, '#2a2f3d', OUT); // lens
-    disc(ctx, 4, 0, 1.5, '#3fa9ff');
-    const flashing = Math.floor(t) % 80 < 5; // diode on its own clock
-    disc(ctx, -5, -7, 2, flashing ? '#ffffff' : '#c9a227');
-    if (flashing) {
-      ctx.strokeStyle = '#ffffff';
+  paparazzo: {
+    // The DOP's film camera — TELL: it hangs from a very visible wire.
+    meadow: (ctx, e) => {
+      ctx.strokeStyle = '#c9ccd8'; // the wire (before the sway, stays taut)
       ctx.lineWidth = 1;
       ctx.beginPath();
-      ctx.moveTo(-9, -11);
-      ctx.lineTo(-7, -9);
-      ctx.moveTo(-1, -11);
-      ctx.lineTo(-3, -9);
+      ctx.moveTo(0, -30);
+      ctx.lineTo(0, -12);
       ctx.stroke();
-    }
+      ctx.save();
+      ctx.rotate(Math.sin(e.animT / 16) * 0.08); // lazy sway on the rig
+      disc(ctx, -4, -9, 4, '#2a2f3d', OUT); // film reels
+      disc(ctx, 3, -9, 4, '#2a2f3d', OUT);
+      disc(ctx, -4, -9, 1.2, '#565a68');
+      disc(ctx, 3, -9, 1.2, '#565a68');
+      orect(ctx, -8, -6, 16, 11, '#3a3f4d'); // camera body
+      disc(ctx, 6, 0, 3.5, '#2a2f3d', OUT); // lens
+      disc(ctx, 6, 0, 1.5, '#3fa9ff');
+      disc(ctx, -5, -3, 1.2, '#c22e2e'); // REC lamp
+      ctx.restore();
+    },
+    // 'TOTALLY A BIRD' surveillance drone — TELL: the sign says so.
+    sewer: (ctx, e) => {
+      droneRotors(ctx, e);
+      orect(ctx, -8, -5, 16, 10, '#565a68');
+      tri(ctx, 9, -3, 9, 3, 15, 0, '#e0aa2f', OUT); // cardboard beak
+      ctx.fillStyle = '#b8b2a6'; // the tape holding it on
+      ctx.fillRect(6, -3, 3, 6);
+      disc(ctx, 2, -1, 2.5, '#ffffff', OUT); // googly eye
+      disc(ctx, 2.7, -0.4, 1, OUT);
+      ctx.strokeStyle = OUT; // TELL: the sworn statement, on strings
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(-4, 5);
+      ctx.lineTo(-3, 9);
+      ctx.moveTo(4, 5);
+      ctx.lineTo(3, 9);
+      ctx.stroke();
+      orect(ctx, -9, 9, 18, 8, '#e6d9a8');
+      txt(ctx, 'A BIRD', 0, 13.5, 4, OUT);
+    },
+    // Winged security camera — TELL: cardboard wings, gaffer-taped on.
+    casino: (ctx, e) => {
+      const flap = Math.sin(e.animT / 4) * 0.5;
+      ctx.save();
+      ctx.translate(-5, -4);
+      ctx.rotate(-0.4 - flap);
+      tri(ctx, 0, 0, -10, -5, -3, 3, '#e0aa2f', OUT);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(-2, -5);
+      ctx.rotate(0.2 + flap * 0.6);
+      tri(ctx, 0, 0, -9, -7, -2, 2, '#c9932e', OUT);
+      ctx.restore();
+      orect(ctx, -8, -4, 14, 8, '#f2f2f2'); // CCTV wedge
+      ctx.fillStyle = '#2a2f3d';
+      ctx.fillRect(3, -3, 4, 6); // lens face
+      disc(ctx, 5, 2, 1, '#c22e2e'); // REC dot
+      ctx.fillStyle = '#b8b2a6'; // TELL: the tape crosses
+      ctx.fillRect(-6, -6, 5, 2);
+      ctx.fillRect(-4.5, -7.5, 2, 5);
+    },
+    // Military drone in a beret — TELL: regulation HELLO tag.
+    castle: (ctx, e) => {
+      droneRotors(ctx, e);
+      orect(ctx, -8, -5, 16, 10, '#4a5232'); // camo hull
+      ctx.fillStyle = '#6f4626'; // camo blotches
+      ctx.fillRect(-5, -3, 4, 3);
+      ctx.fillRect(2, 1, 4, 3);
+      disc(ctx, 6, 0, 3, '#2a2f3d', OUT); // lens
+      disc(ctx, 6, 0, 1.2, '#3fa9ff');
+      ctx.fillStyle = '#3a5a2a'; // beret wedged between the rotors
+      ctx.beginPath();
+      ctx.ellipse(-1, -7, 5, 2, -0.15, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#c22e2e';
+      ctx.fillRect(-2, -8, 2, 1.5); // star pin
+      tellTag(ctx, -6, 6, 11, 'SGT.');
+    },
   },
 
-  rat: (ctx, e) => {
-    ctx.scale(e.facing, 1);
-    ctx.strokeStyle = '#ff9bb0'; // tail first (behind)
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(-6, 1);
-    ctx.quadraticCurveTo(-11, -2 + Math.sin(e.animT / 6) * 2, -14, 2);
-    ctx.stroke();
-    ctx.beginPath();
-    ctx.ellipse(0, 1, 7, 4, 0, 0, Math.PI * 2);
-    ctx.fillStyle = '#8d8d99';
-    ctx.fill();
-    ctx.strokeStyle = OUT;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    disc(ctx, 3, -3, 2, '#8d8d99', OUT); // ear
-    ctx.fillStyle = OUT;
-    ctx.fillRect(5, -1, 2, 2); // beady eye
-    disc(ctx, 7.5, 1, 1, '#ff9bb0'); // nose
-    const step = Math.floor(e.animT / 4) % 2;
-    ctx.fillStyle = OUT;
-    ctx.fillRect(-4 + step, 4, 2, 2);
-    ctx.fillRect(2 - step, 4, 2, 2);
+  rat: {
+    // The intern in the rat suit — TELL: box-fresh white sneakers.
+    meadow: (ctx, e) => {
+      ratBody(ctx, e, '#8d8d99');
+      const step = walkStep(e, 4);
+      ctx.fillStyle = '#f5f0e6';
+      ctx.fillRect(-5 + step, 4, 4, 2);
+      ctx.fillRect(1 - step, 4, 4, 2);
+      ctx.fillStyle = '#c22e2e'; // swoosh-adjacent stripe
+      ctx.fillRect(-4 + step, 5, 2, 1);
+      ctx.fillRect(2 - step, 5, 2, 1);
+    },
+    // The accountant rat, green eyeshade — TELL: zipper along the back.
+    sewer: (ctx, e) => {
+      ratBody(ctx, e, '#8d8d99');
+      ratFeet(ctx, e);
+      ctx.fillStyle = '#2fae5c'; // visor band
+      ctx.fillRect(3, -4, 5, 1);
+      ctx.fillStyle = 'rgba(125,220,79,0.7)'; // the green eyeshade
+      ctx.fillRect(3, -3, 5, 2);
+      tellZipper(ctx, -4, -2, 4);
+    },
+    // The card counter — TELL: a very human shirt cuff palms the ace.
+    casino: (ctx, e) => {
+      ratBody(ctx, e, '#6d6d7a');
+      ratFeet(ctx, e);
+      ctx.fillStyle = '#f5f0e6'; // the palmed ace
+      ctx.fillRect(6, -8, 5, 6);
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(6, -8, 5, 6);
+      txt(ctx, 'A', 8.5, -5, 4, '#c22e2e');
+      ctx.fillStyle = '#f5f0e6'; // TELL: cuff + cufflink
+      ctx.fillRect(4, -3, 3, 2);
+      disc(ctx, 5.5, -2, 0.8, '#ffd34e');
+    },
+    // Not a costume: a real capybara. Completely unbothered.
+    castle: (ctx, e) => {
+      ctx.beginPath();
+      ctx.ellipse(-1, 0, 8, 5, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#a1793f';
+      ctx.fill();
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      orect(ctx, 3, -5, 8, 7, '#a1793f'); // stoic brick of a head
+      ctx.fillStyle = '#8a6532';
+      ctx.fillRect(8, -1, 3, 3); // square snout
+      disc(ctx, 5, -5, 1.5, '#a1793f', OUT); // little round ear
+      ctx.fillStyle = OUT;
+      ctx.fillRect(6, -3, 2, 1); // eye: closed. zen.
+      const step = walkStep(e, 8); // ambling, even at rat speed
+      ctx.fillStyle = '#6f4626';
+      ctx.fillRect(-5 + step, 4, 3, 2);
+      ctx.fillRect(2 - step, 4, 3, 2);
+      disc(ctx, -2, -7, 2, '#ffd34e', OUT); // its emotional-support bird
+      tri(ctx, 0, -7.5, 0, -6.5, 2, -7, '#e0aa2f');
+    },
   },
 
-  chipstack: (ctx, e) => {
-    ctx.rotate(Math.sin(e.animT / 7) * 0.12);
-    const cols = ['#d84343', '#f2f2f2', '#3f6fd8', '#2fae5c'];
-    for (let i = 0; i < 4; i++) {
-      orect(ctx, -8, 4 - i * 5, 16, 5, cols[i]!);
-      ctx.fillStyle = 'rgba(255,255,255,0.6)';
-      ctx.fillRect(-6, 6 - i * 5, 2, 1);
-      ctx.fillRect(4, 6 - i * 5, 2, 1);
-    }
-    disc(ctx, -3, -13, 2, '#ffffff', OUT); // googly eyes
-    disc(ctx, 3, -13, 2, '#ffffff', OUT);
-    disc(ctx, -3 + e.facing, -13, 1, OUT);
-    disc(ctx, 3 + e.facing, -13, 1, OUT);
+  chipstack: {
+    // Stack of film cans — TELL: the props tape is still labeled.
+    meadow: (ctx, e) => {
+      ctx.rotate(Math.sin(e.animT / 7) * 0.12);
+      for (let i = 0; i < 4; i++) {
+        orect(ctx, -8, 4 - i * 5, 16, 5, '#8a8d99');
+        ctx.fillStyle = '#6b6e78';
+        ctx.fillRect(-6, 6 - i * 5, 12, 1);
+      }
+      ctx.fillStyle = '#f5f0e6'; // TELL
+      ctx.fillRect(-6, -3, 12, 4);
+      txt(ctx, 'TAKE 3', 0, -1, 3, OUT);
+      stackEyes(ctx, e, -13);
+    },
+    // Stack of coin rolls, fresh from the laundering — TELL: bank band.
+    sewer: (ctx, e) => {
+      ctx.rotate(Math.sin(e.animT / 7) * 0.12);
+      for (let i = 0; i < 4; i++) {
+        orect(ctx, -8, 4 - i * 5, 16, 5, '#e6d9a8');
+        ctx.fillStyle = '#ffd34e'; // coin ends peeking out
+        ctx.fillRect(-8, 5 - i * 5, 2, 3);
+        ctx.fillRect(6, 5 - i * 5, 2, 3);
+      }
+      ctx.fillStyle = '#f5f0e6'; // TELL
+      ctx.fillRect(-6, -3, 12, 4);
+      txt(ctx, '$10K', 0, -1, 3, '#c22e2e');
+      stackEyes(ctx, e, -13);
+    },
+    // Poker chips (home turf) — TELL: HELLO tag; his name is Chip.
+    casino: (ctx, e) => {
+      ctx.rotate(Math.sin(e.animT / 7) * 0.12);
+      const cols = ['#d84343', '#f2f2f2', '#3f6fd8', '#2fae5c'];
+      for (let i = 0; i < 4; i++) {
+        orect(ctx, -8, 4 - i * 5, 16, 5, cols[i]!);
+        ctx.fillStyle = 'rgba(255,255,255,0.6)';
+        ctx.fillRect(-6, 6 - i * 5, 2, 1);
+        ctx.fillRect(4, 6 - i * 5, 2, 1);
+      }
+      tellTag(ctx, 2, -2, 12, 'CHIP');
+      stackEyes(ctx, e, -13);
+    },
+    // Stack of ballot boxes — TELL: patched with duct tape, obviously.
+    castle: (ctx, e) => {
+      ctx.rotate(Math.sin(e.animT / 7) * 0.12);
+      for (let i = 0; i < 2; i++) {
+        const top = -i * 9;
+        orect(ctx, -8, top, 16, 9, '#e8e8ee');
+        ctx.fillStyle = OUT;
+        ctx.fillRect(-4, top + 2, 8, 2); // slot
+        txt(ctx, 'VOTE', 0, top + 6.5, 3.5, '#2a4fd8');
+      }
+      ctx.fillStyle = '#b8b2a6'; // TELL: duct-tape X
+      ctx.save();
+      ctx.translate(5, 6);
+      ctx.rotate(0.5);
+      ctx.fillRect(-4, -1, 8, 2);
+      ctx.rotate(-1);
+      ctx.fillRect(-4, -1, 8, 2);
+      ctx.restore();
+      stackEyes(ctx, e, -11);
+    },
   },
 
-  gavel: (ctx, e) => {
-    if (e.vy > 2) {
-      // slam blur: justice, delivered at terminal velocity
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
-      ctx.fillRect(-9, -26, 3, 14);
-      ctx.fillRect(6, -26, 3, 14);
-    }
-    ctx.fillStyle = '#6f4626';
-    ctx.fillRect(-2, -18, 4, 12); // handle
-    orect(ctx, -11, -8, 22, 15, '#8a5a2b'); // head
-    ctx.fillStyle = '#5e3a1c';
-    ctx.fillRect(-11, -8, 3, 15);
-    ctx.fillRect(8, -8, 3, 15);
-    ctx.fillStyle = '#ffd34e';
-    ctx.fillRect(-1, -6, 2, 11); // gold inlay
+  gavel: {
+    // The boom mic, dipping into frame again — TELL: it IS studio gear.
+    meadow: (ctx, e) => {
+      slamBlur(ctx, e);
+      ctx.fillStyle = OUT; // boom pole from above
+      ctx.fillRect(-2, -30, 4, 16);
+      ctx.fillStyle = '#b8b2a6'; // gaffer-tape wrap
+      ctx.fillRect(-2.5, -24, 5, 3);
+      ctx.beginPath(); // fuzzy windscreen
+      ctx.ellipse(0, -3, 11, 9, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#6b6e78';
+      ctx.fill();
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#565a68'; // fuzz
+      for (const [fx, fy] of [[-6, -6], [-2, 0], [3, -5], [6, -1], [-7, -1], [1, -8]] as const) {
+        ctx.fillRect(fx, fy, 2, 2);
+      }
+    },
+    // An actual judge's gavel — TELL: the rental sticker.
+    sewer: (ctx, e) => {
+      slamBlur(ctx, e);
+      ctx.fillStyle = '#6f4626';
+      ctx.fillRect(-2, -18, 4, 12); // handle
+      orect(ctx, -11, -8, 22, 15, '#8a5a2b'); // head
+      ctx.fillStyle = '#5e3a1c';
+      ctx.fillRect(-11, -8, 3, 15);
+      ctx.fillRect(8, -8, 3, 15);
+      ctx.fillStyle = '#ffd34e';
+      ctx.fillRect(-1, -6, 2, 11); // gold inlay
+      ctx.fillStyle = '#f5f0e6'; // TELL
+      ctx.fillRect(-8, 1, 12, 4);
+      txt(ctx, 'RENTED', -2, 3, 3, '#c22e2e');
+    },
+    // The giant slot-machine lever — TELL: price sticker still on.
+    casino: (ctx, e) => {
+      slamBlur(ctx, e);
+      ctx.fillStyle = '#c9ccd8'; // chrome shaft
+      ctx.fillRect(-2, -28, 4, 24);
+      ctx.fillStyle = '#f2f2f2';
+      ctx.fillRect(-1, -28, 1, 24); // shine
+      disc(ctx, 0, 0, 6, '#d84343', OUT); // the big red knob
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillRect(-3, -3, 3, 2); // glint
+      ctx.fillStyle = '#f5f0e6'; // TELL
+      ctx.fillRect(1, 2, 9, 5);
+      txt(ctx, '$9.99', 5.5, 4.5, 3, OUT);
+    },
+    // The giant army boot — TELL: 'SIZE 98' stenciled on the toe.
+    castle: (ctx, e) => {
+      slamBlur(ctx, e);
+      orect(ctx, -8, -26, 14, 19, '#4a5232'); // shaft
+      ctx.strokeStyle = OUT; // laces
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (let i = 0; i < 3; i++) {
+        ctx.moveTo(-6, -23 + i * 5);
+        ctx.lineTo(4, -20 + i * 5);
+        ctx.moveTo(4, -23 + i * 5);
+        ctx.lineTo(-6, -20 + i * 5);
+      }
+      ctx.stroke();
+      orect(ctx, -8, -7, 19, 9, '#3f4531'); // foot, toe forward
+      ctx.fillStyle = OUT; // lugged sole
+      ctx.fillRect(-9, 1, 21, 4);
+      ctx.fillStyle = '#565a68';
+      for (let i = 0; i < 5; i++) ctx.fillRect(-8 + i * 4, 2, 2, 2);
+      txt(ctx, 'SIZE 98', 1, -3, 3, '#c9a227');
+    },
   },
+};
+
+/** Which disguises face their walk direction (canvas flip before the skin). */
+const SKIN_FACES: Record<EnemyKind, boolean> = {
+  lobbyist: true,
+  pollster: true,
+  lawyer: false,
+  paparazzo: true,
+  rat: true,
+  chipstack: false,
+  gavel: false,
+};
+
+/** EDraw adapter: flips for facing where the kind walks, then paints the
+ *  theme's disguise. Theme dispatch is a Record — an unknown theme is a
+ *  compile error, never a fallback. */
+function disguise(kind: EnemyKind): EDraw {
+  return (ctx, e, frame, level) => {
+    if (SKIN_FACES[kind]) ctx.scale(e.facing, 1);
+    ENEMY_SKIN[kind][level.def.theme](ctx, e, frame);
+  };
+}
+
+const ENTITY_DRAW: Record<EntityKind, EDraw> = {
+  // The seven enemy kinds wear per-world entourage disguises (table above).
+  lobbyist: disguise('lobbyist'),
+  pollster: disguise('pollster'),
+  lawyer: disguise('lawyer'),
+  paparazzo: disguise('paparazzo'),
+  rat: disguise('rat'),
+  chipstack: disguise('chipstack'),
+  gavel: disguise('gavel'),
 
   pen: (ctx, e) => {
     ctx.rotate(e.animT * 0.35 * e.facing);
@@ -802,10 +1329,16 @@ function drawEstradaBody(ctx: Ctx, pal: PlayerCosmetics, big: boolean, walk: num
     ctx.fillRect(-5, -25, 10, 8);
     ctx.fillStyle = '#e0a070';
     ctx.fillRect(4, -21, 3, 3); // proud nose
+    ctx.fillStyle = '#ffffff'; // smug half-lid eye: white, low pupil…
+    ctx.fillRect(1, -23, 3, 2);
     ctx.fillStyle = OUT;
-    ctx.fillRect(1, -23, 2, 2); // eye
+    ctx.fillRect(2, -22.2, 2, 1.2);
+    ctx.fillRect(1, -23, 3, 1); // …and the lid at half mast
     ctx.fillStyle = '#3a2a1e';
-    ctx.fillRect(0, -18.5, 5, 1.5); // the pencil moustache
+    ctx.fillRect(-5, -24, 2, 4); // slicked sideburn under the cap
+    ctx.fillRect(-5, -20.5, 3, 1); // its little forward hook
+    ctx.fillRect(0, -18.5, 5, 1); // the pencil moustache (thinner = smugger)
+    ctx.fillRect(4.5, -19.2, 1, 1); // dapper upturn
     // cap + 'E' medallion
     orect(ctx, -6, -29, 12, 5, pal.cap);
     ctx.fillStyle = pal.cap;
@@ -832,9 +1365,13 @@ function drawEstradaBody(ctx: Ctx, pal: PlayerCosmetics, big: boolean, walk: num
     ctx.fillRect(-5, -12, 10, 6);
     ctx.fillStyle = '#e0a070';
     ctx.fillRect(4, -10, 2, 2);
+    ctx.fillStyle = '#ffffff'; // the same smug half-lid, fun-size
+    ctx.fillRect(1, -11, 3, 2);
     ctx.fillStyle = OUT;
-    ctx.fillRect(1, -11, 2, 2);
+    ctx.fillRect(2, -10.4, 2, 1.2);
+    ctx.fillRect(1, -11, 3, 0.8);
     ctx.fillStyle = '#3a2a1e';
+    ctx.fillRect(-5, -12, 1.5, 3); // sideburn
     ctx.fillRect(0, -8, 4, 1);
     orect(ctx, -6, -15, 12, 4, pal.cap);
     ctx.fillStyle = pal.cap;
@@ -936,10 +1473,11 @@ function bossBody(ctx: Ctx, b: BossLike, pose: 'roar' | 'hop' | 'throw' | 'flat'
   ctx.beginPath();
   ctx.arc(-3, 2, 17, 0, Math.PI * 2);
   ctx.clip();
-  ctx.fillStyle = '#ffd34e'; // jersey band
-  ctx.fillRect(-21, -2, 36, 8);
+  ctx.fillStyle = '#ffd34e'; // jersey chest band
+  ctx.fillRect(-21, -10, 36, 6);
   ctx.restore();
-  txt(ctx, '01', -3, 2, 6, '#2a4fd8');
+  txt(ctx, '10', -2.4, 3.6, 8, OUT); // drop shadow first…
+  txt(ctx, '10', -3, 3, 8, '#ffd34e'); // …then the yellow 10
   // shell spikes
   tri(ctx, -16, -8, -8, -12, -14, -17, '#c9ccd8', OUT);
   tri(ctx, -8, -13, 0, -14, -5, -21, '#c9ccd8', OUT);
@@ -962,6 +1500,7 @@ function bossBody(ctx: Ctx, b: BossLike, pose: 'roar' | 'hop' | 'throw' | 'flat'
   orect(ctx, 8, -12, 13, 11, '#57c04b');
   ctx.fillStyle = '#7dc86f';
   ctx.fillRect(17, -6, 6, 5); // snout
+  orect(ctx, 15, -1, 9, 4, '#57c04b'); // THE chin, jutting past the snout
   // mouth
   if (pose === 'roar') {
     orect(ctx, 12, -3, 9, 5, '#7a1f1f');
@@ -972,18 +1511,28 @@ function bossBody(ctx: Ctx, b: BossLike, pose: 'roar' | 'hop' | 'throw' | 'flat'
     ctx.fillStyle = OUT;
     ctx.fillRect(13, -2, 7, 2); // grim line
   }
-  // aviator sunglasses (unless they flew off — escape draws them separately)
-  if (pose !== 'flat') {
-    ctx.fillStyle = '#f2c14e';
-    ctx.fillRect(8, -10, 13, 1); // gold bar
-    ctx.fillStyle = '#2a2f3d';
-    ctx.fillRect(9, -10, 5, 4);
-    ctx.fillRect(15, -10, 5, 4);
-  } else {
-    ctx.fillStyle = OUT; // dazed X eyes
-    ctx.fillRect(11, -10, 2, 2);
-    ctx.fillRect(16, -10, 2, 2);
+  // aviator sunglasses — ALWAYS. Flat on his back they sit askew with a
+  // cracked lens, but they do NOT come off. Never have. Never will.
+  ctx.save();
+  if (pose === 'flat') {
+    ctx.translate(1, -1);
+    ctx.rotate(0.18);
   }
+  ctx.fillStyle = '#f2c14e';
+  ctx.fillRect(8, -10, 13, 1); // gold bar
+  ctx.fillStyle = '#2a2f3d';
+  ctx.fillRect(9, -10, 5, 4);
+  ctx.fillRect(15, -10, 5, 4);
+  if (pose === 'flat') {
+    ctx.strokeStyle = '#c9ccd8'; // the crack
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(16, -9);
+    ctx.lineTo(18, -7.5);
+    ctx.lineTo(17, -6.5);
+    ctx.stroke();
+  }
+  ctx.restore();
   // arms
   ctx.fillStyle = '#57c04b';
   if (pose === 'roar') {
@@ -1025,9 +1574,10 @@ const BOSS_DRAW: Record<BossPhase, BossDraw> = {
     tri(ctx, 0, 18, 8, 18, 4, 18 + fl * 2.4, '#ffd23e');
     orect(ctx, -12, 12, 9, 7, '#8a8d99'); // thruster cans
     orect(ctx, 0, 12, 9, 7, '#8a8d99');
-    bossBody(ctx, b, 'flat'); // no sunglasses on the face
+    bossBody(ctx, b, 'flat'); // aviators stay on, even at 30 degrees inverted
     ctx.restore();
-    // the aviators, tumbling off on a short comedy loop
+    // a SPARE pair of aviators tumbles away on a short comedy loop — he
+    // packs backups; the pair on his face never moves
     const k = b.animT % 40;
     ctx.save();
     ctx.translate(-14 - k * 0.8, -20 - k * 1.2);
@@ -1119,17 +1669,12 @@ export function drawBoss(ctx: Ctx, boss: BossLike, cam: CameraState, frame: numb
 // ---------------------------------------------------------------------------
 
 export function drawGoal(ctx: Ctx, level: LevelLike, cam: CameraState, frame: number): void {
-  // LevelLike does not expose the goal position; the Level implementation
-  // carries goalX/goalRow from BuiltLevel. Field probe — an accepted seam
-  // (same class as the checkpoint `claimed` probe). Unknown shape THROWS.
-  const g = level as unknown as { goalX?: unknown; goalRow?: unknown };
-  if (typeof g.goalX !== 'number' || typeof g.goalRow !== 'number') {
-    throw new Error('painter: Level does not expose numeric goalX/goalRow');
-  }
+  // goalX/goalRow are part of the LevelLike contract (types.ts): px center of
+  // the facade and the TILE row of the ground line under the door.
   const cx = snap(cam.x);
   const cy = snap(cam.y);
-  const baseX = snap(g.goalX) - cx; // facade center
-  const baseY = (g.goalRow + 1) * TILE - cy; // ground line under the door
+  const baseX = snap(level.goalX) - cx; // facade center
+  const baseY = (level.goalRow + 1) * TILE - cy; // ground line under the door
   const W = TILE * 3; // 3 tiles wide
   const H = 56;
   if (baseX < -W - CULL || baseX > VIEW_W + W + CULL) return;
@@ -1153,6 +1698,16 @@ export function drawGoal(ctx: Ctx, level: LevelLike, cam: CameraState, frame: nu
   // theme banner over the door
   ctx.fillStyle = pal.accent;
   ctx.fillRect(x0 + 6, y0 + 6, W - 12, 4);
+  // the facade is a rental — nobody took the tag off (THE WORLD IS A SET)
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x0 + W - 2, y0 + 14);
+  ctx.lineTo(x0 + W + 6, y0 + 18);
+  ctx.stroke();
+  orect(ctx, x0 + W + 2, y0 + 16, 26, 12, '#f5f0e6');
+  txt(ctx, 'RENT-A-', x0 + W + 15, y0 + 20, 3.5, OUT);
+  txt(ctx, 'CASTLE', x0 + W + 15, y0 + 25, 3.5, OUT);
   // double door, firmly shut, as is tradition
   orect(ctx, baseX - 11, baseY - 22, 11, 22, '#6f4626');
   orect(ctx, baseX, baseY - 22, 11, 22, '#6f4626');
@@ -1194,3 +1749,31 @@ export function drawGoal(ctx: Ctx, level: LevelLike, cam: CameraState, frame: nu
     txt(ctx, 'SUCCESSFULLY', fx + 18, baseY - 23 + wave / 2, 3.5, '#c22e2e');
   }
 }
+
+// ---------------------------------------------------------------------------
+// Presentation-drift gate — the painter's coverage, derived from the ACTUAL
+// dispatch tables (never hand-listed, so it cannot lie about them).
+// tests/painter-contract.test.ts holds these against canonical copies of the
+// unions: extend a union in types.ts and the suite stays red until a draw
+// entry exists here. Pure data, no canvas, safe to import in plain Node.
+// ---------------------------------------------------------------------------
+
+export const PAINTED_ENTITY_KINDS = Object.keys(ENTITY_DRAW) as readonly EntityKind[];
+export const PAINTED_TILE_KINDS = Object.keys(TILE_DRAW) as readonly TileKind[];
+export const PAINTED_BOSS_PHASES = Object.keys(BOSS_DRAW) as readonly BossPhase[];
+
+/** Themes each enemy kind has a disguise for (always all four, by type;
+ *  exported so the contract test can prove it at runtime too). */
+function skinThemes(kind: EnemyKind): readonly ThemeId[] {
+  return Object.keys(ENEMY_SKIN[kind]) as ThemeId[];
+}
+
+export const PAINTED_ENEMY_SKINS: Record<EnemyKind, readonly ThemeId[]> = {
+  lobbyist: skinThemes('lobbyist'),
+  pollster: skinThemes('pollster'),
+  lawyer: skinThemes('lawyer'),
+  paparazzo: skinThemes('paparazzo'),
+  rat: skinThemes('rat'),
+  chipstack: skinThemes('chipstack'),
+  gavel: skinThemes('gavel'),
+};

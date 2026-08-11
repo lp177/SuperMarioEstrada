@@ -33,7 +33,7 @@ export class WorldMapScene implements SceneLike {
     this.at = params.focus ?? continueAtMap(services.progress);
     this.world = worldOf(this.at);
     this.nav = new MenuNav(services.input);
-    services.music.play('title');
+    services.music.playHome();
   }
 
   private get map() {

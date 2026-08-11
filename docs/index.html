@@ -26,12 +26,12 @@
     }
     body { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; }
     #stage {
-      /* 640x360 virtual canvas scaled to the largest integer-friendly fit. */
+      /* 640x360 virtual canvas, scaled up to fill the viewport (16:9 fit). */
       image-rendering: pixelated;
       background: #000;
       outline: none;
-      max-width: 100vw;
-      max-height: 100vh;
+      width: min(100vw, calc(100vh * 16 / 9));
+      height: auto;
     }
     footer {
       position: fixed;
@@ -46,7 +46,7 @@
       * { animation: none !important; transition: none !important; }
     }
   </style>
-  <script type="module" crossorigin src="./assets/index-StR5FK7K.js"></script>
+  <script type="module" crossorigin src="./assets/index-DlQTTJAC.js"></script>
 </head>
 <body>
   <canvas id="stage" width="640" height="360" tabindex="0" aria-label="Super Mario Estrada game"></canvas>

@@ -23,7 +23,7 @@ export class TitleScene implements SceneLike {
 
   constructor(private readonly game: Game, private readonly services: Services) {
     this.nav = new MenuNav(services.input);
-    services.music.play('title');
+    services.music.playHome(); // rotating title set — never the same tune twice in a row
   }
 
   update(): void {

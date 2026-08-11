@@ -52,6 +52,310 @@ function fillSky(ctx: CanvasRenderingContext2D, stops: readonly (readonly [numbe
 }
 
 // ---------------------------------------------------------------------------
+// SET DRESSING — "THE WORLD IS A SET" (AGENTS.md). The sky is a painted
+// canvas backdrop hung by the conspirators, and stagecraft is not among the
+// skills their crimes required: stitch seams, a wrinkled fold, a curling
+// corner with raw scaffolding behind it, sandbags + scaffold poles
+// silhouetted at the screen edges, stage-light tripods on the skyline, and a
+// boom mic that dips into the top of frame and slowly retracts on a fixed
+// deterministic cycle. Everything stays SUBTLE at parallax distance and
+// escalates meadow -> sewer -> casino -> castle — by the castle they stopped
+// trying and a spare backdrop panel stenciled 'CASTLE (PROP)' just hangs
+// there, askew.
+//
+// SINCERE ZONE: the sewer's barred-door cameo (the real Peach's dungeon) is
+// NOT a set. No gag renders within CAMEO_CLEAR px of a cameo center —
+// same-layer gags skip those slots outright (stable: same parallax layer),
+// and the screen-fixed edge rigging fades out as a cameo slides near.
+// ---------------------------------------------------------------------------
+
+const SEWER_ARCH_PERIOD = 170;
+/** Every Nth arch holds the dungeon door (see drawSewer). */
+const SEWER_CAMEO_EVERY = 8;
+const SEWER_CAMEO_INDEX = 3;
+const CAMEO_CLEAR = 100;
+
+/** Sincere-zone scale for a far-layer x: 0 within CAMEO_CLEAR px of a
+ *  dungeon-door cameo center, ramping to 1 by CAMEO_CLEAR + 70 px out. */
+function cameoClearance(farX: number): number {
+  const period = SEWER_ARCH_PERIOD * SEWER_CAMEO_EVERY;
+  const c = SEWER_ARCH_PERIOD * SEWER_CAMEO_INDEX;
+  const wrapped = (((farX - c) % period) + period) % period;
+  const d = Math.min(wrapped, period - wrapped);
+  if (d <= CAMEO_CLEAR) return 0;
+  return Math.min(1, (d - CAMEO_CLEAR) / 70);
+}
+
+interface DressingSpec {
+  /** Px between canvas stitch seams (far-layer space). */
+  seamPeriod: number;
+  /** Seam stroke color incl. alpha — light on dark skies, dark on light. */
+  seamStyle: string;
+  /** Px between wrinkled folds in the canvas. */
+  foldPeriod: number;
+  /** Which top corner of the backdrop curls open, and how far. */
+  curl: 'tl' | 'tr';
+  curlSize: number;
+  /** Sandbags + scaffold poles at the screen edges (silhouette alpha). */
+  riggingAlpha: number;
+  /** The ground line the edge rigging stands on. */
+  riggingBaseY: number;
+  /** Boom mic max dip below the top of frame, and frames per cycle. */
+  micDepth: number;
+  micPeriod: number;
+  /** Stage-light tripods on the skyline. */
+  tripodPeriod: number;
+  tripodChance: number;
+  tripodBaseY: number;
+  /** Castle only: the spare 'CASTLE (PROP)' backdrop panel, hung askew. */
+  propPanel: boolean;
+  /** Sincere-zone scale for a far-layer x (1 = all clear). null = no zone. */
+  guard: ((farX: number) => number) | null;
+}
+
+/** Exhaustive: a new theme does not compile until it declares how badly its
+ *  producer dressed the set. Escalates in theme order. */
+const SET_DRESSING: Record<ThemeId, DressingSpec> = {
+  meadow: {
+    seamPeriod: 480, seamStyle: 'rgba(80,55,40,0.06)', foldPeriod: 1100,
+    curl: 'tr', curlSize: 38, riggingAlpha: 0.28, riggingBaseY: 300,
+    micDepth: 20, micPeriod: 1560, tripodPeriod: 160, tripodChance: 0.15,
+    tripodBaseY: 252, propPanel: false, guard: null,
+  },
+  sewer: {
+    seamPeriod: 400, seamStyle: 'rgba(190,215,205,0.05)', foldPeriod: 950,
+    curl: 'tl', curlSize: 42, riggingAlpha: 0.4, riggingBaseY: 330,
+    micDepth: 26, micPeriod: 1320, tripodPeriod: 150, tripodChance: 0.22,
+    tripodBaseY: 320, propPanel: false, guard: cameoClearance,
+  },
+  casino: {
+    seamPeriod: 330, seamStyle: 'rgba(255,255,255,0.06)', foldPeriod: 820,
+    curl: 'tr', curlSize: 46, riggingAlpha: 0.5, riggingBaseY: 300,
+    micDepth: 32, micPeriod: 1140, tripodPeriod: 140, tripodChance: 0.3,
+    tripodBaseY: 300, propPanel: false, guard: null,
+  },
+  castle: {
+    seamPeriod: 260, seamStyle: 'rgba(255,235,215,0.10)', foldPeriod: 640,
+    curl: 'tr', curlSize: 54, riggingAlpha: 0.62, riggingBaseY: 310,
+    micDepth: 40, micPeriod: 930, tripodPeriod: 130, tripodChance: 0.42,
+    tripodBaseY: 310, propPanel: true, guard: null,
+  },
+};
+
+/** Vertical stitch seams + the occasional wrinkled fold — the sky is sewn
+ *  together from panels and nobody ironed it. */
+function drawCanvasFlaws(ctx: CanvasRenderingContext2D, oxFar: number, spec: DressingSpec): void {
+  tiled(oxFar, spec.seamPeriod, 20, (sx, i) => {
+    if (spec.guard && spec.guard(sx + oxFar) < 1) return;
+    const wob = hash01(i * 173 + 41) * 3 - 1.5;
+    ctx.strokeStyle = spec.seamStyle;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(sx, 0);
+    ctx.quadraticCurveTo(sx + wob, 160, sx, 320);
+    ctx.stroke();
+    // whip stitches across the seam
+    ctx.beginPath();
+    for (let y = 18 + (((i % 3) + 3) % 3) * 7; y < 320; y += 34) {
+      ctx.moveTo(sx - 3 + wob * (y / 320), y);
+      ctx.lineTo(sx + 3 + wob * (y / 320), y + 3);
+    }
+    ctx.stroke();
+  });
+  tiled(oxFar, spec.foldPeriod, 40, (sx, i) => {
+    if (spec.guard && spec.guard(sx + oxFar) < 1) return;
+    const bend = hash01(i * 211 + 7) * 24 - 12;
+    // a crease: shadow line + highlight line, slightly bent
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = 'rgba(0,0,0,0.06)';
+    ctx.beginPath();
+    ctx.moveTo(sx, 0);
+    ctx.quadraticCurveTo(sx + bend, 170, sx - bend * 0.4, 320);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.beginPath();
+    ctx.moveTo(sx + 3, 0);
+    ctx.quadraticCurveTo(sx + 3 + bend, 170, sx + 3 - bend * 0.4, 320);
+    ctx.stroke();
+  });
+}
+
+/** Stage-light tripods silhouetted on the skyline. One is still on. */
+function drawSkylineTripods(ctx: CanvasRenderingContext2D, oxFar: number, spec: DressingSpec): void {
+  tiled(oxFar, spec.tripodPeriod, 20, (sx, i) => {
+    if (hash01(i * 149 + 71) > spec.tripodChance) return;
+    if (spec.guard && spec.guard(sx + oxFar) < 1) return;
+    const by = spec.tripodBaseY;
+    ctx.strokeStyle = 'rgba(25,20,26,0.6)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(sx - 5, by);
+    ctx.lineTo(sx, by - 13);
+    ctx.moveTo(sx + 5, by);
+    ctx.lineTo(sx, by - 13);
+    ctx.moveTo(sx, by);
+    ctx.lineTo(sx, by - 15);
+    ctx.stroke();
+    ctx.fillStyle = 'rgba(25,20,26,0.7)';
+    ctx.fillRect(sx - 3, by - 20, 6, 6); // the lamp head
+    // a warm pilot glow — someone left it on, it's on the kingdom's tab
+    ctx.fillStyle = 'rgba(255,205,120,0.5)';
+    ctx.fillRect(sx - 1, by - 17, 2, 2);
+  });
+}
+
+/** Sandbags + scaffold poles at the screen edges — the wings are showing. */
+function drawEdgeRigging(ctx: CanvasRenderingContext2D, oxFar: number, spec: DressingSpec): void {
+  for (const side of [-1, 1] as const) {
+    const ex = side === -1 ? 9 : VIEW_W - 9;
+    const scale = spec.guard ? spec.guard(ex + oxFar) : 1;
+    if (scale <= 0) continue;
+    const a = (spec.riggingAlpha * scale).toFixed(3);
+    const by = spec.riggingBaseY;
+    ctx.fillStyle = `rgba(18,14,20,${a})`;
+    // scaffold pole with a coupler plate
+    ctx.fillRect(ex - 2, by - 150, 4, 150);
+    ctx.fillRect(ex - 4, by - 96, 8, 4);
+    // diagonal brace running off-screen
+    ctx.strokeStyle = `rgba(18,14,20,${a})`;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(ex, by - 88);
+    ctx.lineTo(ex + side * 20, by);
+    ctx.stroke();
+    // sandbags at the foot
+    ctx.fillStyle = `rgba(18,14,20,${a})`;
+    for (let s = 0; s < 3; s++) {
+      const bx = ex - side * (4 + s * 9);
+      const bagY = by - 4 - (s === 1 ? 6 : 0);
+      ctx.beginPath();
+      ctx.ellipse(bx, bagY, 7, 4.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+/** The boom mic: dips into the top of frame, hovers, then SLOWLY retracts,
+ *  on a fixed deterministic cycle. Nobody is fooled. */
+function drawBoomMic(ctx: CanvasRenderingContext2D, frame: number, spec: DressingSpec): void {
+  const ph = (frame % spec.micPeriod) / spec.micPeriod;
+  let t = 0;
+  if (ph < 0.1) t = ph / 0.1; // dips in
+  else if (ph < 0.34) t = 1; // hovers, hoping nobody noticed
+  else if (ph < 0.7) t = 1 - (ph - 0.34) / 0.36; // the slow guilty retreat
+  if (t <= 0) return;
+  const cyc = Math.floor(frame / spec.micPeriod);
+  const mx = VIEW_W * (0.24 + hash01(cyc * 23 + 9) * 0.52);
+  const tipY = spec.micDepth * t - 6;
+  ctx.strokeStyle = '#241f28';
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(mx - 26, -8);
+  ctx.lineTo(mx, tipY);
+  ctx.stroke();
+  // fuzzy windscreen
+  ctx.fillStyle = '#3a333d';
+  ctx.beginPath();
+  ctx.ellipse(mx + 3, tipY + 4, 9, 6, 0.5, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(90,80,95,0.8)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (let f = 0; f < 7; f++) {
+    const ang = f * 0.9;
+    const fx = mx + 3 + Math.cos(ang) * 9;
+    const fy = tipY + 4 + Math.sin(ang) * 6;
+    ctx.moveTo(fx, fy);
+    ctx.lineTo(fx + Math.cos(ang) * 2.5, fy + Math.sin(ang) * 2.5);
+  }
+  ctx.stroke();
+}
+
+/** A top corner of the backdrop curls open: raw scaffolding in the gap. */
+function drawCurlCorner(ctx: CanvasRenderingContext2D, spec: DressingSpec): void {
+  const s = spec.curlSize;
+  const right = spec.curl === 'tr';
+  const cx = right ? VIEW_W : 0;
+  const dir = right ? -1 : 1;
+  // the void behind the canvas
+  ctx.fillStyle = '#16121a';
+  ctx.beginPath();
+  ctx.moveTo(cx, 0);
+  ctx.lineTo(cx + dir * s, 0);
+  ctx.lineTo(cx, s);
+  ctx.closePath();
+  ctx.fill();
+  // raw scaffolding poles in the gap
+  ctx.strokeStyle = '#4d4341';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx + dir * s * 0.66, 0);
+  ctx.lineTo(cx + dir * s * 0.1, s * 0.62);
+  ctx.moveTo(cx + dir * s * 0.32, 0);
+  ctx.lineTo(cx, s * 0.35);
+  ctx.stroke();
+  // the curled flap: back side of the canvas, rolled along the tear line
+  ctx.fillStyle = '#e3d6b6';
+  ctx.beginPath();
+  ctx.moveTo(cx + dir * s, 0);
+  ctx.quadraticCurveTo(cx + dir * (s * 0.5 + 14), s * 0.5 + 14, cx, s);
+  ctx.quadraticCurveTo(cx + dir * (s * 0.5 + 4), s * 0.5 + 4, cx + dir * s, 0);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#c9b992';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(cx + dir * s * 0.92, 4);
+  ctx.quadraticCurveTo(cx + dir * (s * 0.5 + 10), s * 0.5 + 10, cx + dir * 3, s * 0.92);
+  ctx.stroke();
+}
+
+/** Castle only: they stopped trying. A spare backdrop panel stenciled
+ *  'CASTLE (PROP)' hangs askew from two ropes — one of them slipped. */
+function drawPropPanel(ctx: CanvasRenderingContext2D, oxFar: number, frame: number): void {
+  tiled(oxFar, 1150, 220, (sx, i) => {
+    const h = hash01(i * 211 + 13);
+    const py = 70 + h * 26;
+    const tilt = 0.09 + h * 0.06 + Math.sin(frame * 0.006 + i * 2.3) * 0.01;
+    // ropes to the rig above the frame — one taut, one sagging
+    ctx.strokeStyle = '#2a2226';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(sx - 46, 0);
+    ctx.lineTo(sx - 60, py - 34);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(sx + 70, 0);
+    ctx.quadraticCurveTo(sx + 82, py * 0.7, sx + 58, py - 46);
+    ctx.stroke();
+    ctx.save();
+    ctx.translate(sx, py);
+    ctx.rotate(tilt);
+    // raw canvas panel
+    ctx.fillStyle = '#cfc09c';
+    ctx.fillRect(-70, -44, 140, 88);
+    ctx.strokeStyle = '#a89a72';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(-70, -44, 140, 88);
+    // the "castle": one flat grey keep, two towers, zero effort
+    ctx.fillStyle = '#7d7688';
+    ctx.fillRect(-34, -22, 68, 44);
+    ctx.fillRect(-52, -30, 16, 52);
+    ctx.fillRect(36, -30, 16, 52);
+    for (let c = 0; c < 4; c++) ctx.fillRect(-32 + c * 18, -28, 9, 6);
+    ctx.fillStyle = '#4f4a58';
+    ctx.fillRect(-8, 0, 16, 22); // roughly centered, roughly a door
+    // the stencil, spray-through, not even straight
+    ctx.fillStyle = 'rgba(30,24,28,0.8)';
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('CASTLE (PROP)', 2, 34);
+    ctx.restore();
+  });
+}
+
+// ---------------------------------------------------------------------------
 // MEADOW — warm sky, fat clouds, foreclosed mushroom-house skyline, hills,
 // and the TOAD'S BETS blimp slowly trawling for new suckers.
 // ---------------------------------------------------------------------------
@@ -139,6 +443,11 @@ function drawMeadow(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numb
   ctx.fillStyle = '#d9bfa8';
   ctx.fillRect(0, skylineY, VIEW_W, VIEW_H - skylineY);
 
+  // THE SET: the sky is sewn canvas; the crew's gear is not quite hidden.
+  const set = SET_DRESSING.meadow;
+  drawCanvasFlaws(ctx, oxFar, set);
+  drawSkylineTripods(ctx, oxFar, set);
+
   // MID (0.4): rolling hills.
   const oxMid = cam.x * PARALLAX_MID;
   ctx.fillStyle = '#8fca62';
@@ -163,6 +472,11 @@ function drawMeadow(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numb
     ctx.fill();
   });
   ctx.fillRect(0, 344, VIEW_W, VIEW_H - 344);
+
+  // stage gear over the whole backdrop (still behind tiles + gameplay)
+  drawEdgeRigging(ctx, oxFar, set);
+  drawBoomMic(ctx, frame, set);
+  drawCurlCorner(ctx, set);
 }
 
 // ---------------------------------------------------------------------------
@@ -181,7 +495,7 @@ function drawSewer(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numbe
   // faint mortar courses
   ctx.fillStyle = 'rgba(255,255,255,0.03)';
   for (let y = 12; y < VIEW_H; y += 14) ctx.fillRect(0, y, VIEW_W, 1);
-  tiled(oxFar, 170, 90, (sx, i) => {
+  tiled(oxFar, SEWER_ARCH_PERIOD, 90, (sx, i) => {
     // dark arched recess
     ctx.fillStyle = '#11171a';
     ctx.beginPath();
@@ -191,8 +505,10 @@ function drawSewer(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numbe
     ctx.lineTo(sx + 28, 320);
     ctx.closePath();
     ctx.fill();
-    // Every ~8th arch: the dungeon door. Bars, and a tiny pink crown waiting.
-    if (((i % 8) + 8) % 8 === 3) {
+    // Every SEWER_CAMEO_EVERYth arch: the dungeon door. Bars, and a tiny pink
+    // crown waiting. This cameo is SINCERE — cameoClearance() keeps every set
+    // gag at least CAMEO_CLEAR px away. The REAL kingdom is not a set.
+    if (((i % SEWER_CAMEO_EVERY) + SEWER_CAMEO_EVERY) % SEWER_CAMEO_EVERY === SEWER_CAMEO_INDEX) {
       ctx.fillStyle = '#07090b';
       ctx.fillRect(sx - 16, 210, 32, 110);
       ctx.strokeStyle = '#2a3438';
@@ -211,6 +527,11 @@ function drawSewer(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numbe
       ctx.fillRect(sx + 2, 255, 1, 3);
     }
   });
+
+  // THE SET: even down here the wall is canvas — except near the door.
+  const set = SET_DRESSING.sewer;
+  drawCanvasFlaws(ctx, oxFar, set);
+  drawSkylineTripods(ctx, oxFar, set);
 
   // MID (0.4): grate light shafts, hanging chains, rat eyes.
   const oxMid = cam.x * PARALLAX_MID;
@@ -290,6 +611,11 @@ function drawSewer(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numbe
     else ctx.lineTo(x, y);
   }
   ctx.stroke();
+
+  // stage gear (the rigging fades out when the dungeon door slides near)
+  drawEdgeRigging(ctx, oxFar, set);
+  drawBoomMic(ctx, frame, set);
+  drawCurlCorner(ctx, set);
 }
 
 // ---------------------------------------------------------------------------
@@ -357,6 +683,11 @@ function drawCasino(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numb
   ctx.fillStyle = '#141028';
   ctx.fillRect(0, 300, VIEW_W, VIEW_H - 300);
 
+  // THE SET: neon can't hide a stitched sky. Trump ordered EXTRA tripods.
+  const set = SET_DRESSING.casino;
+  drawCanvasFlaws(ctx, oxFar, set);
+  drawSkylineTripods(ctx, oxFar, set);
+
   // MID (0.4): the ferris wheel of card suits, turning slowly.
   const oxMid = cam.x * PARALLAX_MID;
   tiled(oxMid, 860, 180, (sx, i) => {
@@ -415,6 +746,11 @@ function drawCasino(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numb
     ctx.fillStyle = c;
     ctx.fillRect(x - ((oxNear % 16) + 16) % 16, 336, 3, 3);
   }
+
+  // stage gear over the glitz
+  drawEdgeRigging(ctx, oxFar, set);
+  drawBoomMic(ctx, frame, set);
+  drawCurlCorner(ctx, set);
 }
 
 // ---------------------------------------------------------------------------
@@ -472,6 +808,13 @@ function drawCastle(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numb
   });
   ctx.fillStyle = flash ? '#33131b' : '#200609';
   ctx.fillRect(0, 310, VIEW_W, VIEW_H - 310);
+
+  // THE SET: by world 4 they stopped trying. Seams everywhere, tripods
+  // everywhere, and the spare backdrop panel is just... hanging there.
+  const set = SET_DRESSING.castle;
+  drawCanvasFlaws(ctx, oxFar, set);
+  drawSkylineTripods(ctx, oxFar, set);
+  if (set.propPanel) drawPropPanel(ctx, oxFar, frame);
 
   // MID (0.4): gold statues of Princess Impeach on pedestals.
   const oxMid = cam.x * PARALLAX_MID;
@@ -557,6 +900,11 @@ function drawCastle(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numb
     ctx.fillStyle = '#245c24';
     ctx.fillRect(ex - 8, ey, 16, 3);
   });
+
+  // stage gear, no longer even silhouette-shy
+  drawEdgeRigging(ctx, oxFar, set);
+  drawBoomMic(ctx, frame, set);
+  drawCurlCorner(ctx, set);
 }
 
 // ---------------------------------------------------------------------------

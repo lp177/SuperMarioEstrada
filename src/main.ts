@@ -45,6 +45,12 @@ void initKeyboardLayout();
 input.attach(window);
 canvas.focus();
 
+// An unfocused tab plays no music: suspend the audio clock, resume on return.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) music.suspend();
+  else music.resume();
+});
+
 const game = new Game(canvas, services, factories, 'title');
 requestAnimationFrame(game.tick);
 

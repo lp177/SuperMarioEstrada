@@ -1,5 +1,5 @@
 // ============================================================================
-// The score of the scam. 8 ORIGINAL chiptune loops — parody the genre, never
+// The score of the scam. 12 ORIGINAL chiptune loops — parody the genre, never
 // the melodies. Pure data + pure helpers: this module does zero audio work and
 // imports clean in plain Node. music.ts is the only consumer that makes sound.
 //
@@ -15,9 +15,9 @@
 //   marks combine with holds: 3,:2  2':4
 //
 // Pattern.div is the subdivision: steps per beat (1 = quarters, 2 = eighths,
-// 4 = sixteenths). A pattern LOOPS independently on its own grid; its length
-// in beats (steps / div) must divide bars * 4 so every voice realigns at the
-// loop point (the data test enforces this).
+// 3 = triplets, 4 = sixteenths). A pattern LOOPS independently on its own
+// grid; its length in beats (steps / div) must divide bars * 4 so every voice
+// realigns at the loop point (the data test enforces this).
 //
 // NOISE patterns reuse the grammar but degrees are DRUMS, a closed set:
 //   0 = closed hat (short hiss)   1 = snare (mid crack)   2 = low thud
@@ -28,15 +28,42 @@
 // lead +1, arp +2. Register work beyond that is authored with '/', marks.
 //
 // An unknown token THROWS. No silent fallbacks.
+//
+// THE SOUR-NOTE GAG (sourNotes): the pit orchestra is part of the badly-built
+// production. A track may declare AT MOST ONE sour note: at schedule time,
+// music.ts nudges the named voice's note at pattern index `step` by `semi`
+// semitones — DELIBERATELY off-scale, once per loop, fully deterministic.
+// This is the single, explicit exemption to the pentatonic-safety rule; the
+// data test verifies each sour note genuinely breaks the scale and that no
+// track sneaks in more than one. Author them on `lead` only — bass patterns
+// are rearranged by the variation engine, which would move the joke around.
+//
+// THE VARIATION ENGINE (variantOf + arrange): every act plays its world's
+// theme, but never the identical arrangement. `variantOf(levelId)` hashes the
+// stable string id (FNV-1a) into a 32-bit variant; `arrange(cfg, variant)`
+// derives a deterministic arrangement: pentatonic-safe root transposition
+// from SAFE_TRANSPOSES, bass rotation/regeneration, lead timbre swap, swing
+// delta, arp thinning, percussion rotation. Variant 0 IS the base
+// arrangement. Same (track, variant) -> identical arrangement, forever.
 // ============================================================================
 
 import type { TrackId } from '../core/types.ts';
 
 export interface Pattern {
-  /** Steps per beat: 1 = quarter notes, 2 = eighths, 4 = sixteenths. */
+  /** Steps per beat: 1 = quarters, 2 = eighths, 3 = triplets, 4 = sixteenths. */
   div: 1 | 2 | 3 | 4;
   /** Space-separated step tokens — grammar documented at the top of file. */
   steps: string;
+}
+
+/** The one sanctioned scale-rule breaker — see THE SOUR-NOTE GAG above. */
+export interface SourNote {
+  /** Which tonal voice carries the joke (author 'lead' only — see header). */
+  voice: 'bass' | 'lead' | 'arp';
+  /** 0-based step index into that voice's parsed pattern. Must hit a note. */
+  step: number;
+  /** Semitone nudge applied at schedule time; the result must be OFF-scale. */
+  semi: number;
 }
 
 export interface TrackConfig {
@@ -57,6 +84,8 @@ export interface TrackConfig {
   /** 0..0.45: fraction of a step by which odd steps are delayed (swung 8ths
    *  when div=2). Applied per-voice on that voice's own grid. */
   swing?: number;
+  /** Max ONE per track. The explicit, tested exemption to pentatonic safety. */
+  sourNotes?: readonly SourNote[];
 }
 
 /** One parsed step note. `deg` is the scale-degree index (may exceed the
@@ -115,12 +144,17 @@ export function midiToFreq(midi: number): number {
 //   minor pent    [0,3,5,7,10]   dominant pent [0,2,4,7,10]
 //   ritusen       [0,2,5,7,9]    egyptian/sus  [0,2,5,7,10]
 //   major pent    [0,2,4,7,9]
-// Variety is REAL: 5 scale shapes, 7 roots, subdivisions from lone quarter
+// Variety is REAL: 5 scale shapes, 9 roots, subdivisions from lone quarter
 // notes (sewer) to swung sixteenth comping (casino). The data test asserts a
-// >= 2.5x notes-per-second span; the actual span is ~9x.
+// >= 2.5x notes-per-second span across the four LEVEL themes.
+//
+// EVERY TRACK IS DIEGETIC — the score the conspirators commissioned for their
+// own production, world by world (see AGENTS.md "THE WORLD IS A SET").
 // ---------------------------------------------------------------------------
 
 export const TRACKS: Record<TrackId, TrackConfig> = {
+  // -- HOME SET: three DISTINCT con-man swagger tunes (title + home-b/c). ----
+
   // Swaggering con-man strut: minor-pentatonic bluesy swagger over a lazy
   // swung backbeat. The sound of a man who just sold you your own house.
   title: {
@@ -139,38 +173,81 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
     noise: { div: 2, steps: '2 . 0 . 1 . 0 .' },
   },
 
-  // Sunny oom-pah with a flat seventh rotting in the middle of it — the
-  // kingdom looks fine until you read the foreclosure signs.
-  meadow: {
-    name: 'Foreclosure Sunshine',
-    bpm: 118,
+  // Sleazy dominant-pentatonic finger-snap strut, heavier swing, big pauses:
+  // the walk of a notary who certifies his own alibis.
+  'home-b': {
+    name: 'Notary Public Enemy',
+    bpm: 108,
     scale: [0, 2, 4, 7, 10],
-    root: 48, // C3
+    root: 47, // B2
     bars: 4,
-    bass: { div: 2, steps: '0, 3, 0, 3, 0, 3, 0, 3, | 1, 3, 1, 3, 0, 3, 0, 3,' },
+    swing: 0.3,
+    bass: { div: 2, steps: '0 . . 0 2 . 0 . | 3 . . 3 2 . 1 .' },
     lead: {
       div: 2,
       steps:
-        '2 . 2 3 2 1 0 . | 4 . 4 . 3 2 3 . | 2 . 2 3 2 1 0 . | 1 2 1 0 4, . 0 .',
+        "4 . 4 3:2 . . 2 . | . 2 4 2 1:2 . . . | 4 . 4 3:2 . . 2 . | 4' 3' 2' 4 1:3 . . .",
     },
-    noise: { div: 2, steps: '2 . 0 . 1 . 0 0' },
+    noise: { div: 2, steps: '2 . 0 1 . 0 1 .' },
   },
 
-  // Dripping minor pentatonic, quarter notes only, holes everywhere. Money
-  // gets laundered slowly down here.
+  // Habanera bass, melodramatic hangs, a little flourish before the turn:
+  // a tango danced alone with your signature on the contract.
+  'home-c': {
+    name: 'Terms of Service Tango',
+    bpm: 116,
+    scale: [0, 2, 5, 7, 10],
+    root: 43, // G2
+    bars: 4,
+    bass: { div: 2, steps: '0:2 . 4, . 0 . 0 . | 1:2 . 4, . 1 . 0 .' },
+    lead: {
+      div: 2,
+      steps:
+        "0' . . 4 3:2 . . . | 3 . . 2 1:2 . . . | 0' . . 4 3 . 4 . | 2':2 . 1' 4:3 . . 0 .",
+    },
+    arp: { div: 4, steps: '. . . . . . . . . . . . 0 2 4 2' },
+    noise: { div: 2, steps: '2 . . 0 1 . 0 . | 2 . . 0 1 . 1 .' },
+  },
+
+  // -- LEVEL THEMES ----------------------------------------------------------
+
+  // W1 is Estrada's fake hero-movie set, so W1 gets the ersatz spaghetti-
+  // western hero score: triplet gallop bass, big lonely whistled calls.
+  meadow: {
+    name: 'The Good, the Bad and the Notarized',
+    bpm: 112,
+    scale: [0, 3, 5, 7, 10],
+    root: 43, // G2
+    bars: 4,
+    bass: {
+      div: 3,
+      steps: '0 . 0 0 . 0 0 . 0 2 . 2 | 3 . 3 3 . 3 2 . 2 1 . 1',
+    },
+    lead: {
+      div: 2,
+      steps:
+        "4:2 . 0':3 . . . 4 . | 3:2 . 2:2 . 0:2 . . . | 4:2 . 0':3 . . . 4 . | 2 3 2 0 3,:4 . . .",
+    },
+    noise: { div: 2, steps: '2 . 2 2 1 . 2 . | 2 . 2 2 1 . 1 1' },
+  },
+
+  // The laundromat rhythm: drippy minor pentatonic, quarter notes with holes
+  // everywhere, and a cash-register "ka-ching" up top twice a loop. Money
+  // gets laundered slowly down here — delicates setting.
   sewer: {
-    name: 'Coin Laundry Blues',
+    name: 'Spin Cycle (Money Laundering Setting)',
     bpm: 104,
     scale: [0, 3, 5, 7, 10],
     root: 41, // F2
     bars: 4,
     bass: { div: 1, steps: '0:2 . 2:2 . 0:2 . 1:2 .' },
     lead: { div: 1, steps: '. 4 . 3 | . . 2:2 . | . . 4, . | . 2:3 . .' },
+    arp: { div: 1, steps: ". . . . . . . 4' | . . . . . . . 2''" },
     noise: { div: 1, steps: '. . 0 . . 0 . .' },
   },
 
-  // Swing jazz-chip: walking bass, swung comping sixteenths, hats on
-  // everything. The house edge, orchestrated.
+  // Swing jazz-chip: walking bass, swung comping, hats on everything, and
+  // slot-bell dings ringing over the top. The house edge, orchestrated.
   casino: {
     name: 'The House Always Wins',
     bpm: 124,
@@ -182,62 +259,78 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
     lead: {
       div: 2,
       steps:
-        "4 3 2 . 1 2 3 . | 4 . 2' . 1' 4 2 . | 4 3 2 . 1 2 3 4 | 1':2 . . 0' 4 2 1 .",
+        "4 3 2 . 1 2 3 . | 4 . 2'' . 1' 4 2 . | 4 3 2 . 1 2 3 4 | 1':2 . . 0' 4 2 1 .",
     },
-    arp: { div: 4, steps: '0 2 4 2 0 2 4 2 1 2 4 2 1 2 4 2' },
+    arp: { div: 4, steps: "0 2 4 2 0 2 4 2 1 2 4 2 1 2 4 0''" },
     noise: { div: 2, steps: '0 0 1 0 0 0 1 0' },
   },
 
-  // Pounding low square eighths under a hollow suspended scale; snare on the
-  // backbeat like a gavel. Gold statues of Impeach line the halls.
+  // Bowsonaro's military parade march: oom-pah root-and-fifth bass, fife
+  // lead, snare rolls — and ONE sour brass note per loop (step 26, +1 semi):
+  // the pit orchestra was hired by the same people who built the cardboard
+  // castle. Deterministic, rare, and absolutely in the contract.
   castle: {
-    name: 'Palace of Perfectly Legal Gold',
+    name: 'Motorcade of the Mito',
     bpm: 116,
-    scale: [0, 2, 5, 7, 10],
+    scale: [0, 2, 4, 7, 10],
     root: 40, // E2
     bars: 4,
-    bass: { div: 2, steps: '0 0 0 0 0 0 1 1 | 0 0 0 0 3 3 1 1' },
+    bass: { div: 2, steps: '0 3, 0 3, 0 3, 0 3, | 0 3, 0 3, 1 1 2 2' },
     lead: {
       div: 2,
       steps:
-        "0' . . 0' . 4 3 . | 4:3 . . . 3 . 1 . | 0' . . 0' . 4 3 . | 1:2 . 2:2 . 3:2 . . .",
+        "0' 0' 0':2 . 4 3 4 . | 2':2 . 0':2 . 4:2 . . . | 0' 0' 0':2 . 4 3 4 . | 4' . 3' . 2' . 0':2 .",
     },
-    noise: { div: 2, steps: '2 . 1 . 2 . 1 0' },
+    noise: {
+      div: 4,
+      steps: '2 . . . 1 . 1 1 2 . . . 1 . . . | 2 . . . 1 . 1 1 2 . 1 1 1 . 1 .',
+    },
+    sourNotes: [{ voice: 'lead', step: 26, semi: 1 }],
   },
 
-  // Aggressive syncopation: sixteenth-note bass stabs that keep missing the
-  // downbeat, exactly like the man's relationship with the truth.
+  // The parade gone frantic: the castle march's DNA at a dead sprint —
+  // sixteenth bass stabs missing the downbeat, snare rolls tumbling over
+  // themselves. The motorcade has left the road.
   boss: {
-    name: 'Shell Game Showdown',
+    name: 'The Parade Goes Feral',
     bpm: 124,
-    scale: [0, 3, 5, 7, 10],
+    scale: [0, 2, 4, 7, 10],
     root: 43, // G2
     bars: 2,
-    bass: { div: 4, steps: '0 . 0 0 . 0 . 0 2 . 2 2 . 3 3 .' },
-    lead: { div: 2, steps: "4 4 . 3 . 4:2 . . | 2 2 . 1 . 2':2 . ." },
-    noise: { div: 4, steps: '2 . 0 0 1 . 0 . 2 2 0 . 1 . 0 0' },
+    bass: {
+      div: 4,
+      steps: '0 . 0 0 . 0 . 0 3, . 3, 3, . 0 0 . | 1 . 1 1 . 1 . 1 2 . 2 2 . 4, 4, .',
+    },
+    lead: { div: 2, steps: "0' 0' . 4 0' . 4 . | 2' 2' . 1' 2' . 4:2 ." },
+    noise: {
+      div: 4,
+      steps: '2 . 0 0 1 . 1 1 2 . 0 . 1 1 . 1 | 2 2 0 . 1 . 1 1 2 . 0 0 1 1 1 .',
+    },
   },
 
-  // A music box in 4/4 with a light swung limp — pretty, patient, and lying
-  // to you. Chords on 2-3-4 give it the waltz-ish sway.
+  // -- SCENE TRACKS ----------------------------------------------------------
+
+  // Silent-movie pit piano, one reel behind the action: stride bass (low
+  // note, mid chord), melodramatic runs, a pianist paid in exposure.
   cutscene: {
-    name: 'A Music Box Full of Lies',
+    name: 'Pit Pianist (Reel 4, Slightly Late)',
     bpm: 104,
     scale: [0, 2, 4, 7, 9],
     root: 57, // A3
     bars: 4,
-    swing: 0.15,
-    bass: { div: 1, steps: '0, . 3,, . 0, . 4,, .' },
+    swing: 0.18,
+    bass: { div: 2, steps: '0, . 2 . 4,, . 2 . | 3, . 2 . 4, . 1 .' },
     lead: {
       div: 2,
       steps:
-        "0' . 4 . 2 . 4 . | 1' . 4 . 2:3 . . . | 0' . 4 . 2 . 4 . | 1 . 2 . 0:3 . . .",
+        "4 . 2 . 0:2 . . . | 1 2 3 . 4:3 . . . | 4 . 2 . 0':2 . . . | 4 3 2 1 0:4 . . .",
     },
     arp: { div: 1, steps: '. 0 2 4' },
   },
 
-  // Triumphant fanfare that keeps slipping off its own pedestal: big major
-  // pentatonic shouts, then the phrase stumbles downstairs at the cadence.
+  // Triumphant fanfare that keeps slipping off its own pedestal — and the
+  // crooked cadence is now literal: ONE flatted note in the fanfare (step 13,
+  // -1 semi). The trumpet player also lost money on the bet.
   ending: {
     name: 'Triumph (Terms and Conditions Apply)',
     bpm: 120,
@@ -252,5 +345,212 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
     },
     arp: { div: 4, steps: "0 . 4 . 0' . 4 . 1 . 4 . 1' . 4 ." },
     noise: { div: 2, steps: '2 . 1 . 2 . 1 .' },
+    sourNotes: [{ voice: 'lead', step: 13, semi: -1 }],
+  },
+
+  // -- HOLD SET: call-center muzak for the pause menu. The joke: Estrada has
+  // -- put the rescue itself on hold. Cheesy, thin, endlessly patient. -------
+
+  // Thin bossa shuffle, polite noodle lead, chintzy arpeggio comping, NO
+  // drums (the phone line did not budget for a drummer).
+  'hold-a': {
+    name: 'Your Rescue Is Important to Us',
+    bpm: 106,
+    scale: [0, 2, 4, 7, 9],
+    root: 55, // G3
+    bars: 4,
+    swing: 0.12,
+    bass: { div: 1, steps: '0, . 4, . 1, . 4, .' },
+    lead: {
+      div: 2,
+      steps:
+        "2 . 4 . 3:2 . . . | . . 2 . 1:2 . . . | 2 . 4 . 0':2 . . . | . . 4 . 2:2 . . .",
+    },
+    arp: { div: 1, steps: '. 0 2 4 . 0 2 4 . 1 2 4 . 0 2 4' },
+  },
+
+  // The other cassette in the hold machine: ritusen politeness, soft hats
+  // only, a phrase that resolves just enough to keep you on the line.
+  'hold-b': {
+    name: 'Please Continue to Hold (Est. Wait: 4 Worlds)',
+    bpm: 104,
+    scale: [0, 2, 5, 7, 9],
+    root: 53, // F3
+    bars: 4,
+    swing: 0.1,
+    bass: { div: 1, steps: '0, . . 2, 3, . . 2, 0, . . 2, 4, . 3, .' },
+    lead: {
+      div: 2,
+      steps:
+        "4 3 2:2 . . . . . | 1 2 3:2 . . . . . | 4 3 2:2 . . . . . | 1 . 0':4 . . . . .",
+    },
+    arp: { div: 2, steps: '. 0 . 2 . 4 . 2 . 1 . 3 . 4 . 2' },
+    noise: { div: 1, steps: '. 0 . 0 . 0 . 0' },
   },
 };
+
+// ===========================================================================
+// THE VARIATION ENGINE — pure, deterministic, tested without an AudioContext.
+// ===========================================================================
+
+/** FNV-1a 32-bit hash of a string id ('w1a2', ...). Stable forever; this is
+ *  how acts get their variant number. variantOf('') is the FNV offset basis. */
+export function variantOf(id: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < id.length; i++) {
+    h = (h ^ id.charCodeAt(i)) >>> 0;
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h >>> 0;
+}
+
+/** Root transpositions variants may pick from. All small (|t| <= 5), all
+ *  NONZERO — a nonzero variant always moves the key — and all verified by the
+ *  data test to keep every authored voice inside the audible register. A
+ *  transposition shifts the whole scale, so pentatonic safety is preserved
+ *  by construction. */
+export const SAFE_TRANSPOSES: readonly number[] = [2, 3, -2, -3, 5, -4];
+
+/** Lead timbres the variation engine may swap in. 'pulse25' is a 25%-duty
+ *  pulse built as a periodic wave by music.ts; the base arrangement (variant
+ *  0) is always 'square' — the TONAL table's house lead. */
+export type LeadTimbre = 'square' | 'triangle' | 'pulse25';
+
+export interface VoiceArrangement {
+  div: 1 | 2 | 3 | 4;
+  steps: (StepNote | null)[];
+}
+
+/** A concrete, fully-derived arrangement of one track for one variant.
+ *  Everything music.ts needs to schedule; everything the tests can diff. */
+export interface Arrangement {
+  variant: number;
+  /** Semitones added to the track root. 0, or a SAFE_TRANSPOSES member. */
+  transpose: number;
+  leadTimbre: LeadTimbre;
+  /** Effective swing (base +/- a small delta, clamped to 0..0.45). */
+  swing: number;
+  bass: VoiceArrangement;
+  /** The lead is the THEME's identity — never rearranged, only re-voiced. */
+  lead: VoiceArrangement;
+  arp: VoiceArrangement | null;
+  noise: VoiceArrangement | null;
+}
+
+/** House seeded stream (LCG, same constants as the noise buffers). Returns
+ *  uint32 draws; identical seed -> identical draws, no Math.random anywhere. */
+function lcgStream(seed: number): () => number {
+  let s = (seed ^ 0x9e3779b9) >>> 0;
+  return () => {
+    s = (Math.imul(s, 1664525) + 1013904223) >>> 0;
+    return s;
+  };
+}
+
+/** Rotate a pattern by whole beats, picking the first rotation (starting from
+ *  a draw-derived offset) that actually CHANGES the sequence — a periodic
+ *  pattern must not silently rotate onto itself. Falls back to a copy of the
+ *  original only if every rotation is an identity (fully uniform pattern —
+ *  none are authored). */
+function rotateSteps(steps: (StepNote | null)[], div: number, draw: number): (StepNote | null)[] {
+  const beats = steps.length / div;
+  if (beats < 2) return steps.slice();
+  const key = JSON.stringify(steps);
+  for (let i = 0; i < beats - 1; i++) {
+    const r = 1 + ((draw + i) % (beats - 1));
+    const k = (r * div) % steps.length;
+    const rot = steps.slice(k).concat(steps.slice(0, k));
+    if (JSON.stringify(rot) !== key) return rot;
+  }
+  return steps.slice();
+}
+
+/** Regenerate a bass line as a straight-eighths pump of each beat's sounding
+ *  degree (carrying held/previous notes through rests). A REAL structural
+ *  rewrite — different rhythm, same harmonic skeleton, still 100% on-scale. */
+function pumpBass(steps: (StepNote | null)[], div: number): (StepNote | null)[] {
+  const beats = steps.length / div;
+  let deg = 0;
+  let oct = 0;
+  for (let i = steps.length - 1; i >= 0; i--) {
+    const n = steps[i];
+    if (n) {
+      deg = n.deg;
+      oct = n.oct;
+      break;
+    }
+  }
+  const out: (StepNote | null)[] = [];
+  for (let b = 0; b < beats; b++) {
+    for (let s = 0; s < div; s++) {
+      const n = steps[b * div + s];
+      if (n) {
+        deg = n.deg;
+        oct = n.oct;
+        break;
+      }
+    }
+    out.push({ deg, oct, len: 1 }, { deg, oct, len: 1 });
+  }
+  return out;
+}
+
+/** Thin an arp to every other onset (rests preserved) — density variation. */
+function thinArp(steps: (StepNote | null)[]): (StepNote | null)[] {
+  let k = 0;
+  return steps.map((n) => (n === null ? null : k++ % 2 === 0 ? n : null));
+}
+
+/** Derive the concrete arrangement of `cfg` for `variant`. Deterministic:
+ *  same inputs -> deep-equal output, forever. Variant 0 = the base score
+ *  exactly as authored. Nonzero variants ALWAYS differ structurally: nonzero
+ *  transpose, rotated-or-regenerated bass, rotated percussion — plus freely
+ *  drawn lead timbre, swing delta and arp density. */
+export function arrange(cfg: TrackConfig, variant: number): Arrangement {
+  const v = variant >>> 0;
+  const bass = parsePattern(cfg.bass);
+  const lead = parsePattern(cfg.lead);
+  const arp = cfg.arp ? parsePattern(cfg.arp) : null;
+  const noise = cfg.noise ? parsePattern(cfg.noise) : null;
+
+  if (v === 0) {
+    return {
+      variant: 0,
+      transpose: 0,
+      leadTimbre: 'square',
+      swing: cfg.swing ?? 0,
+      bass: { div: cfg.bass.div, steps: bass },
+      lead: { div: cfg.lead.div, steps: lead },
+      arp: cfg.arp && arp ? { div: cfg.arp.div, steps: arp } : null,
+      noise: cfg.noise && noise ? { div: cfg.noise.div, steps: noise } : null,
+    };
+  }
+
+  const draw = lcgStream(v);
+  const transpose = SAFE_TRANSPOSES[draw() % SAFE_TRANSPOSES.length]!;
+  const rotatedBass = rotateSteps(bass, cfg.bass.div, draw());
+  const bassArr: VoiceArrangement =
+    draw() % 3 === 0
+      ? { div: 2, steps: pumpBass(rotatedBass, cfg.bass.div) }
+      : { div: cfg.bass.div, steps: rotatedBass };
+  const timbres: readonly LeadTimbre[] = ['square', 'triangle', 'pulse25'];
+  const leadTimbre = timbres[draw() % timbres.length]!;
+  const deltas = [0.06, 0.1, -0.06, -0.1];
+  const swing = Math.min(0.45, Math.max(0, (cfg.swing ?? 0) + deltas[draw() % deltas.length]!));
+  const arpKeep = draw() % 2 === 0 ? 1 : 2;
+  const arpArr: VoiceArrangement | null =
+    cfg.arp && arp ? { div: cfg.arp.div, steps: arpKeep === 1 ? arp : thinArp(arp) } : null;
+  const noiseArr: VoiceArrangement | null =
+    cfg.noise && noise ? { div: cfg.noise.div, steps: rotateSteps(noise, cfg.noise.div, draw()) } : null;
+
+  return {
+    variant: v,
+    transpose,
+    leadTimbre,
+    swing,
+    bass: bassArr,
+    lead: { div: cfg.lead.div, steps: lead },
+    arp: arpArr,
+    noise: noiseArr,
+  };
+}

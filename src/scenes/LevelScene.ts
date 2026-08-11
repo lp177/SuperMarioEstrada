@@ -45,7 +45,8 @@ export class LevelScene implements SceneLike {
     this.fx = new FxSystem(services.reducedMotion);
     this.decor = buildDecor(def.theme, this.level.map, idHash(def.id));
     this.nav = new MenuNav(services.input);
-    services.music.play(def.theme);
+    // Every act gets its own deterministic arrangement of its world's theme.
+    services.music.play(def.theme, { variant: idHash(def.id) });
   }
 
   update(): void {
@@ -64,6 +65,7 @@ export class LevelScene implements SceneLike {
       this.paused = true;
       this.pauseSel = 0;
       sfx.play('ui-select');
+      music.playPause(); // the rescue is now ON HOLD (rotating hold muzak)
       return;
     }
 
@@ -101,16 +103,16 @@ export class LevelScene implements SceneLike {
   }
 
   private updatePause(): void {
-    const { sfx } = this.services;
+    const { sfx, music } = this.services;
     const action = this.nav.poll();
     if (!action) return;
-    if (action === 'back') { this.paused = false; sfx.play('ui-back'); return; }
+    if (action === 'back') { this.paused = false; sfx.play('ui-back'); music.endPause(); return; }
     if (action === 'up') { this.pauseSel = (this.pauseSel + PAUSE_ITEMS.length - 1) % PAUSE_ITEMS.length; sfx.play('ui-move'); }
     if (action === 'down') { this.pauseSel = (this.pauseSel + 1) % PAUSE_ITEMS.length; sfx.play('ui-move'); }
     if (action === 'select') {
       sfx.play('ui-select');
       const item = PAUSE_ITEMS[this.pauseSel];
-      if (item === 'RESUME') this.paused = false;
+      if (item === 'RESUME') { this.paused = false; music.endPause(); }
       else if (item === 'RESTART ACT') this.game.changeScene('level', { levelId: this.params.levelId });
       else this.game.changeScene('worldmap', { focus: this.params.levelId });
     }

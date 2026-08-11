@@ -1,49 +1,442 @@
-import type { LevelDef } from '../core/types.ts';
+// ============================================================================
+// WORLD 1 — MUSHROOM HEIGHTS ('meadow'). Produced in-fiction by M. ESTRADA:
+// the opening set of his hero movie. The kingdom right after the scam —
+// foreclosure signs, betting billboards, film-crew gear (decor is the painter
+// crew's job; this file owns layout + placement).
+//
+// Authoring rules honored here:
+//   - Motifs chained on {endX, endRow}; raw builder calls only where a motif
+//     cannot say it (hidden goldbar pockets, shallow pit floors, late fliers).
+//   - The mandatory route is flow-bot honest: steps <= 2 rows, gaps <= 5,
+//     nothing that needs more than run+jump.
+//   - W1 is GENTLE: wide runways, pits floored 3 deep (fall in, hop out, no
+//     death) on the mandatory road. Real voids only in the optional ravine.
+//   - Every gap floor sits at surfaceRow+3: deep enough that the bot's gap
+//     probe (2 tiles) still calls it a gap and jumps, shallow enough that a
+//     fallen player walks out with one held jump.
+//   - Clocked hazards (gavel, lawyer) live > 27 tiles from the start; walkers
+//     spawn >= 24 tiles out so an idle level stays silent.
+//   - Each build() ends by proving its own arithmetic: endX must land exactly
+//     on def.width, or it throws.
+// ============================================================================
 
-// PLACEHOLDER world — one hand-rolled dev act so the engine integrates.
-// The content workflow replaces this file with 4 authored acts.
+import type { LevelBuilderLike, LevelDef } from '../core/types.ts';
+import type { MotifEnd } from '../game/motifs.ts';
+import {
+  arenaApproach,
+  brickGallery,
+  checkpointRest,
+  coinArc,
+  crumbleBridge,
+  enemyGauntlet,
+  finishRunway,
+  gapJump,
+  goldbarPerch,
+  onewayClimb,
+  pipeField,
+  runway,
+  secretPocket,
+  springboardWall,
+  steppes,
+} from '../game/motifs.ts';
+
+// ---------------------------------------------------------------------------
+// goldbarPocket — a HIDDEN goldbar in a dug alcove, same trick geometry as
+// secretPocket (open 1-column slot, brick lid, hollow interior) but paying out
+// a goldbar. Used by the optional acts, whose rule is 2 easy bars + 3 hidden.
+//   x     : shoulder ground at row
+//   x+1   : entrance slot, floor at row+2
+//   x+2/3 : interior — brick lid at row, hollow row+1..row+2, floor row+3,
+//           the goldbar at row+2
+//   x+4   : shoulder ground at row
+// ---------------------------------------------------------------------------
+function goldbarPocket(
+  b: LevelBuilderLike,
+  x: number,
+  row: number,
+  opts: { index: number },
+): MotifEnd {
+  if (row + 3 >= b.heightTiles) {
+    throw new Error(`goldbarPocket: pocket floor ${row + 3} falls off the map`);
+  }
+  b.ground(x, x, row);
+  b.ground(x + 1, x + 1, row + 2);
+  b.ground(x + 2, x + 3, row + 3);
+  b.platform(x + 2, x + 3, row, 'brick');
+  b.ground(x + 4, x + 4, row);
+  b.goldbar(opts.index, x + 3, row + 2);
+  return { endX: x + 5, endRow: row };
+}
+
+/** A shallow recoverable pit floor under a carved gap: surface at gapRow+3 so
+ *  the flow bot's 2-tile gap probe still jumps it, while a fallen player just
+ *  hops back out. W1's "shallow pits" pillar, in one call. */
+function pitFloor(b: LevelBuilderLike, x0: number, x1: number, gapRow: number): void {
+  b.ground(x0, x1, gapRow + 3);
+}
+
+/** Every build proves its own arithmetic: the chain must land exactly on the
+ *  right edge of the map, or the act is mis-sized and must not ship. */
+function mustEndAtWidth(b: LevelBuilderLike, endX: number, id: string): void {
+  if (endX !== b.widthTiles) {
+    throw new Error(`${id}: motif chain ends at x=${endX}, expected width ${b.widthTiles}`);
+  }
+}
+
 export const world1: LevelDef[] = [
+  // =========================================================================
+  // w1a1 — FORECLOSURE FIELDS. The tutorial reel: wide runways, baby steps,
+  // one small gap, the spring, and the first notary stamp in an early qblock.
+  // =========================================================================
   {
     id: 'w1a1',
     world: 1,
     act: 1,
     title: 'Foreclosure Fields',
-    excuse: 'A notary never runs. It devalues the stamp.',
+    excuse: 'She was never at this address. I checked the deed myself — notarized, stamped, and therefore true.',
     theme: 'meadow',
-    width: 160,
+    width: 180,
     build(b) {
-      b.ground(0, 40, 26);
+      let c = runway(b, 0, 26, { len: 14, coinRow: 22 }); // 12 coins
       b.start(3, 25);
-      b.coinRow(8, 14, 22);
-      b.qblock(16, 22, 'coin');
-      b.qblock(18, 22, 'stamp');
-      b.brick(17, 22);
-      b.enemy('lobbyist', 24, 25);
-      b.ground(44, 70, 26);
-      b.coinRow(46, 50, 21);
-      b.enemy('pollster', 55, 25);
-      b.goldbar(0, 47, 20);
-      b.steps(62, 25, 4, 1);
-      b.ground(70, 100, 24);
-      b.pipe(76, 20, 4, { lawyer: true });
-      b.checkpoint(84, 23);
-      b.goldbar(1, 90, 18);
-      b.enemy('lobbyist', 92, 23);
-      b.enemy('lobbyist', 95, 23);
-      b.ground(102, 159, 26);
-      b.oneway(104, 110, 20);
-      b.goldbar(2, 107, 18);
-      b.coinRow(104, 110, 19);
-      b.spring(116, 25);
-      b.platform(118, 122, 18, 'brick');
-      b.goldbar(3, 120, 16);
-      b.enemy('rat', 124, 25);
-      b.secret(0, 128, 24);
-      b.secret(1, 132, 24);
-      b.secret(2, 136, 24);
-      b.goldbar(4, 140, 22);
-      b.coinRow(126, 140, 22);
-      b.goal(150, 25);
+      c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'stamp' }); // early stamp
+      // Jump tutorial, part 1: little steps up and back down.
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 1, treadW: 3, dir: 1 });
+      c = runway(b, c.endX, c.endRow, { len: 5 });
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 1, treadW: 3, dir: -1 });
+      // Part 2: one small gap, floored shallow — falling in teaches, not kills.
+      c = gapJump(b, c.endX, c.endRow, { gap: 3, approach: 4, landing: 4 });
+      pitFloor(b, 43, 45, 26);
+      c = coinArc(b, c.endX, c.endRow, { gap: 3 }); // 5 coins
+      pitFloor(b, 53, 55, 26);
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'lobbyist'] });
+      c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 });
+      c = runway(b, c.endX, c.endRow, { len: 11, rings: true }); // 6 coins
+      // Part 3: the spring. Bonus bar on the wall top for a good bounce.
+      c = springboardWall(b, c.endX, c.endRow, { wallH: 4 });
+      b.goldbar(3, 103, 19);
+      c = runway(b, c.endX, c.endRow, { len: 12, coinRow: 18 }); // 10 coins
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 });
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: -1 });
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['pollster', 'lobbyist'] });
+      c = runway(b, c.endX, c.endRow, { len: 12, coinRow: 23 }); // 10 coins
+      b.goldbar(2, 150, 22); // crowning the coin row
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 });
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
+      c = finishRunway(b, c.endX, c.endRow, { len: 9 }); // goal at 172 = width-8
+      c = runway(b, c.endX, c.endRow, { len: 5 }); // ground to the edge
+      mustEndAtWidth(b, c.endX, 'w1a1');
+    },
+  },
+
+  // =========================================================================
+  // w1a2 — BET SLIP MEADOWS. The odds get worse: first pipes (with THE
+  // lawyer), a raised meadow shelf, slightly wider gaps.
+  // =========================================================================
+  {
+    id: 'w1a2',
+    world: 1,
+    act: 2,
+    title: 'Bet Slip Meadows',
+    excuse: 'Rescue her NOW? And void every bet slip in the kingdom? I am protecting your money, Mangiani.',
+    theme: 'meadow',
+    width: 180,
+    build(b) {
+      let c = runway(b, 0, 26, { len: 10, coinRow: 22 }); // 8 coins
+      b.start(3, 25);
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
+      c = gapJump(b, c.endX, c.endRow, { gap: 3 });
+      pitFloor(b, 19, 21, 26);
+      c = brickGallery(b, c.endX, c.endRow, { len: 10 }); // 3 coin qblocks
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] });
+      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true }); // 51 tiles out
+      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
+      pitFloor(b, 65, 68, 26);
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 });
+      c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      // The raised shelf: up 6 rows, an airy gap, back down.
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: 1 });
+      c = runway(b, c.endX, c.endRow, { len: 10, coinRow: 16 }); // 8 coins
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      c = gapJump(b, c.endX, c.endRow, { gap: 4, approach: 3, landing: 3 });
+      pitFloor(b, 108, 111, 20);
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 });
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['pollster', 'lobbyist', 'pollster'] });
+      b.coinRow(124, 131, 22); // 8 coins over the gauntlet
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 });
+      c = runway(b, c.endX, c.endRow, { len: 11, rings: true }); // 6 coins
+      b.goldbar(3, 146, 22); // between the ring clusters
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 });
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
+      c = finishRunway(b, c.endX, c.endRow, { len: 8 }); // goal at 174 = width-6
+      c = runway(b, c.endX, c.endRow, { len: 3 });
+      mustEndAtWidth(b, c.endX, 'w1a2');
+    },
+  },
+
+  // =========================================================================
+  // w1a3 — BILLBOARD HEIGHTS. The high road: up onto the rooftops of the
+  // giant "IMPOSSIBLE TO LOSE!" billboards via oneway climbs, a peak lane at
+  // row 16, then a long stepped descent. Falls off the boards land on floored
+  // ledges — Estrada budgeted for stunt mats.
+  // =========================================================================
+  {
+    id: 'w1a3',
+    world: 1,
+    act: 3,
+    title: 'Billboard Heights',
+    excuse: 'We lost the golden hour. No certified hero climbs a billboard in bad light — it reads terribly on camera.',
+    theme: 'meadow',
+    width: 180,
+    build(b) {
+      let c = runway(b, 0, 26, { len: 10, coinRow: 22 }); // 8 coins
+      b.start(3, 25);
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 3, dir: 1 });
+      // First billboard: oneway ladder, stunt-mat floor 3 under the planks.
+      c = onewayClimb(b, c.endX, c.endRow, { rise: 4 });
+      pitFloor(b, 17, 23, 22);
+      c = runway(b, c.endX, c.endRow, { len: 10, coinRow: 15 }); // 8 coins
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
+      c = gapJump(b, c.endX, c.endRow, { gap: 3 });
+      pitFloor(b, 45, 47, 18);
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] });
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 });
+      c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      c = gapJump(b, c.endX, c.endRow, { gap: 4, approach: 3, landing: 3 });
+      pitFloor(b, 76, 79, 18);
+      c = brickGallery(b, c.endX, c.endRow, { len: 10 }); // 3 coin qblocks
+      // Second billboard, up to the peak lane.
+      c = onewayClimb(b, c.endX, c.endRow, { rise: 2 });
+      pitFloor(b, 94, 98, 18);
+      c = runway(b, c.endX, c.endRow, { len: 8, coinRow: 13 }); // 6 coins
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 });
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 });
+      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
+      pitFloor(b, 129, 132, 22);
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['pollster', 'rat'] });
+      b.coinRow(145, 152, 19); // 8 coins over the gauntlet
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 });
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: -1 });
+      b.goldbar(3, 160, 23); // floating beside the descent
+      c = runway(b, c.endX, c.endRow, { len: 5 });
+      b.goldbar(4, 164, 22);
+      c = finishRunway(b, c.endX, c.endRow, { len: 9 }); // goal at 172 = width-8
+      c = runway(b, c.endX, c.endRow, { len: 4 });
+      mustEndAtWidth(b, c.endX, 'w1a3');
+    },
+  },
+
+  // =========================================================================
+  // w1a4 — COIN VACUUM VALLEY (OPTIONAL low road). A trench stuffed with the
+  // kingdom's un-vacuumed coins. Harder but richer: 2 easy bars on perches,
+  // 3 hidden (two dug pockets, one high on the exit wall), a spike pit, and
+  // the film-can stack (chipstack) makes its debut.
+  // =========================================================================
+  {
+    id: 'w1a4',
+    world: 1,
+    act: 4,
+    title: 'Coin Vacuum Valley',
+    excuse: 'The coin vacuum was scheduled maintenance. Totally unrelated to us. I have the log. It is documented.',
+    theme: 'meadow',
+    width: 162,
+    build(b) {
+      let c = runway(b, 0, 26, { len: 9, coinRow: 22 }); // 7 coins
+      b.start(3, 25);
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 3, dir: -1 }); // into the trench
+      c = runway(b, c.endX, c.endRow, { len: 12, coinRow: 26 }); // 10 coins
+      b.coinRow(16, 25, 28); // 10 more — the un-vacuumed layer
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 }); // easy bar 1
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'lobbyist'] });
+      b.coinRow(36, 42, 27); // 7 coins
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 });
+      c = runway(b, c.endX, c.endRow, { len: 8, coinRow: 27 }); // 6 coins
+      c = goldbarPocket(b, c.endX, c.endRow, { index: 2 }); // hidden bar 1
+      c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      c = gapJump(b, c.endX, c.endRow, { gap: 4, approach: 3, landing: 3 });
+      pitFloor(b, 71, 74, 30);
+      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
+      b.ground(81, 84, 34); // the one nasty pit: floored...
+      b.spikes(81, 84, 33); // ...with spikes. Optional act, optional pain.
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'pollster', 'lobbyist'] });
+      b.coinRow(91, 99, 26); // 9 coins
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 });
+      c = brickGallery(b, c.endX, c.endRow, { len: 8 }); // 2 coin qblocks
+      c = goldbarPocket(b, c.endX, c.endRow, { index: 3 }); // hidden bar 2
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 });
+      // Springboard out of the trench; hidden bar 3 rides high on the wall.
+      c = springboardWall(b, c.endX, c.endRow, { wallH: 5 });
+      b.goldbar(4, 131, 21);
+      c = runway(b, c.endX, c.endRow, { len: 10, rings: true }); // 3 coins
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // easy bar 2
+      c = finishRunway(b, c.endX, c.endRow, { len: 9 }); // goal at 155 = width-7
+      c = runway(b, c.endX, c.endRow, { len: 4 });
+      mustEndAtWidth(b, c.endX, 'w1a4');
+    },
+  },
+
+  // =========================================================================
+  // w1a5 — TOAD TENT CITY. The refugee camp of ruined Toads (the satire aims
+  // at the scammers; the tents are decor's sad job). Tent-pole pipes, the
+  // first paparazzo drone, a crumble walkway, and a 5-gap finale.
+  // =========================================================================
+  {
+    id: 'w1a5',
+    world: 1,
+    act: 5,
+    title: 'Toad Tent City',
+    excuse: 'The tent city has no filming permit. We resume the heroism when the paperwork clears — six to eight weeks.',
+    theme: 'meadow',
+    width: 180,
+    build(b) {
+      let c = runway(b, 0, 26, { len: 13, coinRow: 22 }); // 11 coins
+      b.start(3, 25);
+      c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'stamp' }); // mid-world mercy stamp
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'lobbyist'] });
+      c = gapJump(b, c.endX, c.endRow, { gap: 4 });
+      pitFloor(b, 35, 38, 26);
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
+      c = pipeField(b, c.endX, c.endRow, { pipes: 2 }); // tent poles, no lawyer
+      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
+      pitFloor(b, 62, 65, 26);
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 });
+      c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      c = runway(b, c.endX, c.endRow, { len: 10, rings: true }); // 3 coins
+      b.enemy('paparazzo', 84, 22); // the DOP's camera on its wire
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: 1 });
+      c = crumbleBridge(b, c.endX, c.endRow, { len: 4 }); // taped-cardboard walkway
+      pitFloor(b, 96, 99, 22);
+      c = runway(b, c.endX, c.endRow, { len: 7, coinRow: 19 }); // 5 coins
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 });
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: -1 });
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['pollster', 'pollster', 'lobbyist'] });
+      b.coinRow(127, 136, 22); // 10 coins
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 });
+      // Finale: the widest gap of the world so far, bar floating mid-flight.
+      c = gapJump(b, c.endX, c.endRow, { gap: 5, approach: 3, landing: 3 });
+      pitFloor(b, 153, 157, 26);
+      b.coinRow(153, 157, 23); // 5 coins tracing the leap
+      b.goldbar(3, 155, 22);
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
+      c = finishRunway(b, c.endX, c.endRow, { len: 9 }); // goal at 173 = width-7
+      c = runway(b, c.endX, c.endRow, { len: 4 });
+      mustEndAtWidth(b, c.endX, 'w1a5');
+    },
+  },
+
+  // =========================================================================
+  // w1a6 — GRANDMA'S HAT RAVINE (OPTIONAL spur). The hat Grandma bet and
+  // lost blew in here. Crumble bridges over a REAL void — this is the one
+  // W1 act where falling is falling. 2 easy bars, 3 hidden, coins over every
+  // bridge for the greedy.
+  // =========================================================================
+  {
+    id: 'w1a6',
+    world: 1,
+    act: 6,
+    title: "Grandma's Hat Ravine",
+    excuse: 'We nearly had her, but Grandma’s hat blew into the ravine, and a hero honors his grandmother first. Family law.',
+    theme: 'meadow',
+    width: 180,
+    build(b) {
+      let c = runway(b, 0, 26, { len: 9, coinRow: 22 }); // 7 coins
+      b.start(3, 25);
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 }); // easy bar 1
+      c = crumbleBridge(b, c.endX, c.endRow, { len: 4 }); // void below
+      b.coinRow(17, 20, 23); // 4 coins over the planks
+      c = runway(b, c.endX, c.endRow, { len: 5, coinRow: 22 }); // 3 coins
+      c = crumbleBridge(b, c.endX, c.endRow, { len: 6 }); // longer, still void
+      b.coinRow(30, 35, 23); // 6 coins
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['pollster', 'lobbyist'] });
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 });
+      c = onewayClimb(b, c.endX, c.endRow, { rise: 4 }); // up the ravine wall
+      pitFloor(b, 55, 61, 26);
+      c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      c = gapJump(b, c.endX, c.endRow, { gap: 5, approach: 3, landing: 3 }); // the ravine leap, no net
+      c = goldbarPocket(b, c.endX, c.endRow, { index: 2 }); // hidden bar 1
+      c = crumbleBridge(b, c.endX, c.endRow, { len: 6 }); // void
+      b.coinRow(88, 93, 19); // 6 coins
+      c = coinArc(b, c.endX, c.endRow, { gap: 5 }); // 7 coins, void below
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['pollster', 'pollster'] });
+      b.coinRow(110, 115, 18); // 6 coins
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 });
+      // Spring to the high ridge; hidden bar 2 floats above the wall top.
+      c = springboardWall(b, c.endX, c.endRow, { wallH: 5 });
+      b.goldbar(3, 128, 13);
+      c = runway(b, c.endX, c.endRow, { len: 14, coinRow: 14 }); // 12 coins
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 });
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // easy bar 2
+      c = goldbarPocket(b, c.endX, c.endRow, { index: 4 }); // hidden bar 3
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 });
+      c = finishRunway(b, c.endX, c.endRow, { len: 9 }); // goal at 172 = width-8
+      c = runway(b, c.endX, c.endRow, { len: 5 });
+      mustEndAtWidth(b, c.endX, 'w1a6');
+    },
+  },
+
+  // =========================================================================
+  // w1a7 — THE REPOSSESSED KEEP (CASTLE). A castle with a lien on it. The
+  // boom mic (gavel) dips into frame, the camera drone hovers, and Bowsonaro
+  // grandstands in an arena carpeted with repossessed gold.
+  // =========================================================================
+  {
+    id: 'w1a7',
+    world: 1,
+    act: 7,
+    title: 'The Repossessed Keep',
+    excuse: 'The keep was repossessed mid-rescue. New owner, new locks, new princess location. Legally she is in another castle.',
+    theme: 'meadow',
+    width: 156,
+    boss: true,
+    cutsceneAfter: 'w1-end',
+    build(b) {
+      let c = runway(b, 0, 26, { len: 12, coinRow: 22 }); // 10 coins
+      b.start(3, 25);
+      c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // pre-boss stamp
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] });
+      b.coinRow(25, 30, 22); // 6 coins
+      c = gapJump(b, c.endX, c.endRow, { gap: 4 });
+      pitFloor(b, 36, 39, 26);
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 });
+      c = runway(b, c.endX, c.endRow, { len: 8 });
+      b.enemy('gavel', 58, 22); // the boom mic, 58 tiles from the spawn
+      b.coinRow(55, 57, 23); // bait either side of the slam zone
+      b.coinRow(59, 61, 23);
+      c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: 1 });
+      c = crumbleBridge(b, c.endX, c.endRow, { len: 5 }); // the drawbridge, repossessed
+      pitFloor(b, 74, 78, 22);
+      b.coinRow(74, 78, 20); // 5 coins
+      b.goldbar(3, 76, 18); // high over the crumbling planks
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 });
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: -1 });
+      c = runway(b, c.endX, c.endRow, { len: 10, rings: true }); // 3 coins
+      b.enemy('paparazzo', 102, 22); // the castle security drone
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 });
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
+      // The arena: gates, Bowsonaro, and a floor of repossessed gold.
+      c = arenaApproachWithLoot(b, c.endX, c.endRow);
+      c = runway(b, c.endX, c.endRow, { len: 3 });
+      mustEndAtWidth(b, c.endX, 'w1a7');
     },
   },
 ];
+
+/** w1a7's arena: standard arenaApproach (24-tile floor, goal inside at the
+ *  right) plus the repossessed-gold coin carpet, clear of both gate columns. */
+function arenaApproachWithLoot(b: LevelBuilderLike, x: number, row: number): MotifEnd {
+  const end = arenaApproach(b, x, row, { width: 24 });
+  b.coinRow(x + 9, x + 27, row - 4); // 19 coins inside the arena
+  return end;
+}

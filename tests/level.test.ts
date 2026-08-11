@@ -263,4 +263,33 @@ describe('Level', () => {
     // and the ratchet reset behind the checkpoint, not ahead of the player
     expect(level.backLimitX).toBeLessThanOrEqual(level.player.x - level.player.halfW + 1e-6);
   });
+
+  it('a castle goal stays sealed until the boss encounter resolves', () => {
+    const def: LevelDef = {
+      ...makeDef(80, (b) => {
+        b.ground(0, 39, 30);
+        b.start(3, 29);
+        b.arena(40, 72, 30);
+        b.goal(66, 29);
+      }),
+      boss: true,
+    };
+    const level = new Level(def);
+    // Sprint the player straight to the goal line, past the un-fought boss.
+    level.player.x = level.goalX + 4;
+    const evs = run(level, 200, inp());
+    // The arena engaged, but crossing the goal must NOT finish the act.
+    expect(evs).toContain('boss-intro');
+    expect(evs).not.toContain('goal');
+    expect(level.finished).toBe(false);
+
+    // Resolve the encounter externally (pens do this in real play): hp 0 ->
+    // the staged escape -> the goal unseals -> ceremony completes.
+    level.boss!.hp = 0;
+    const after = run(level, 400, inp());
+    expect(after).toContain('boss-escape');
+    expect(after).toContain('goal');
+    expect(after).toContain('flag-plant');
+    expect(level.finished).toBe(true);
+  });
 });

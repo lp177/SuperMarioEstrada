@@ -84,14 +84,21 @@ describe('drawBackground', () => {
 // buildDecor
 // --------------------------------------------------------------------------
 
+/** Studio-prop gags (THE WORLD IS A SET) spawn in every theme. */
+const STAGE_PROPS = [
+  'propStick', 'tapePatch', 'propTag', 'clapperboard', 'cueCards',
+  'stageLight', 'cableRun', 'wetPaint', 'cardboardToadAudience',
+  'paperCastle', 'sandbagPile',
+] as const;
+
 const VOCAB: Record<ThemeId, readonly string[]> = {
-  meadow: ['saisieSign', 'betsBillboard', 'boardedHouse', 'flower', 'bush', 'coinTruck', 'grassTuft'],
-  sewer: ['leakPipe', 'ratHole', 'skeletonBettor', 'launderTape', 'sewerShroom', 'mossTuft'],
-  casino: ['slotFacade', 'chipStack', 'cardLean', 'allInArrow', 'velvetRope', 'chipScatter'],
-  castle: ['impeachStatue', 'ballotCrenel', 'chainedDoor', 'wallTorch', 'graffiti', 'emberTuft'],
+  meadow: ['saisieSign', 'betsBillboard', 'boardedHouse', 'flower', 'bush', 'coinTruck', 'grassTuft', ...STAGE_PROPS],
+  sewer: ['leakPipe', 'ratHole', 'skeletonBettor', 'launderTape', 'sewerShroom', 'mossTuft', ...STAGE_PROPS],
+  casino: ['slotFacade', 'chipStack', 'cardLean', 'allInArrow', 'velvetRope', 'chipScatter', ...STAGE_PROPS],
+  castle: ['impeachStatue', 'ballotCrenel', 'chainedDoor', 'wallTorch', 'graffiti', 'emberTuft', ...STAGE_PROPS],
 };
 
-const FRONT_KINDS = new Set(['grassTuft', 'mossTuft', 'chipScatter', 'emberTuft']);
+const FRONT_KINDS = new Set(['grassTuft', 'mossTuft', 'chipScatter', 'emberTuft', 'cueCards', 'cableRun']);
 
 describe('buildDecor', () => {
   it('is deterministic for a given (theme, map, seed)', () => {

@@ -298,11 +298,18 @@ export class Level implements LevelLike {
     // 8. crumble scheduling + fuse ticking
     this.updateCrumble();
 
-    // 9. goal ceremony
+    // 9. goal ceremony. A castle goal stays sealed until the staged encounter
+    // resolved — Bowsonaro must escape (or, in rage, actually fall). Without
+    // this a runner can sprint past the boss and finish the act mid-"fight".
+    const bossResolved =
+      this.boss === null ||
+      this.boss.phase === 'escape' ||
+      this.boss.phase === 'defeated';
     if (
       !this._finished &&
       this.goalTimer < 0 &&
       !this.player.dead &&
+      bossResolved &&
       this.player.x >= this.goalX
     ) {
       this.emitAt('goal', this.goalX, this.goalY);

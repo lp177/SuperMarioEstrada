@@ -61,6 +61,12 @@ export class Game implements GameLike {
   /** One fixed 1/60s step. Public so tests and probes can drive it headless. */
   step(): void {
     this.frame++;
+    // Arm WebAudio on the first real user gesture — ONE owner for the unlock,
+    // covering every scene (scenes' own sfx.ensure() calls are idempotent).
+    if (this.services.input.edges().size > 0) {
+      this.services.sfx.ensure();
+      this.services.music.ensure();
+    }
     if (this.fade) {
       if (this.fade.out > 0) {
         this.fade.out--;
