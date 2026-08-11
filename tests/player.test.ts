@@ -176,8 +176,10 @@ describe('Player: jumping', () => {
     const tapped = apexRise(false);
     expect(held).toBeGreaterThanOrEqual(4 * TILE);
     expect(held).toBeLessThanOrEqual(10 * TILE); // sanity ceiling
-    expect(tapped).toBeGreaterThanOrEqual(2 * TILE);
-    expect(tapped).toBeLessThan(held - TILE);
+    // Jump-cut on release (playtest request): a 1-frame tap is a SHORT hop —
+    // well under half a tile of a held jump, but still a real hop.
+    expect(tapped).toBeGreaterThanOrEqual(TILE / 2);
+    expect(tapped).toBeLessThan(held / 2);
   });
 
   it('raises exactly one jump event and one land event per hop', () => {

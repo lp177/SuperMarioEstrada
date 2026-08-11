@@ -57,11 +57,16 @@ describe('TileMap basics', () => {
 describe('TileMap out-of-bounds semantics', () => {
   const m = new TileMap(10, 6);
 
-  it('left / right / below the map read as bedrock', () => {
+  it('left / right of the map read as bedrock; below is OPEN VOID', () => {
     expect(m.tileAt(-1, 3)).toBe('bedrock');
     expect(m.tileAt(10, 3)).toBe('bedrock');
-    expect(m.tileAt(4, 6)).toBe('bedrock');
-    expect(m.tileAt(4, 100)).toBe('bedrock');
+    // Below the bottom is empty — falling out must be lethal (a sealed
+    // bedrock bottom once made every pit riskless and voided void-death).
+    expect(m.tileAt(4, 6)).toBe('empty');
+    expect(m.tileAt(4, 100)).toBe('empty');
+    // ...but the side walls still win below the map: no escaping sideways.
+    expect(m.tileAt(-1, 100)).toBe('bedrock');
+    expect(m.tileAt(10, 100)).toBe('bedrock');
   });
 
   it('above the map top reads as empty (no headbonk over the top edge)', () => {
@@ -97,7 +102,7 @@ describe('TileMap solidity sampling', () => {
     const m = new TileMap(6, 6);
     expect(m.solidAtPx(-5, 40)).toBe('solid'); // left wall
     expect(m.solidAtPx(6 * TILE + 5, 40)).toBe('solid'); // right wall
-    expect(m.solidAtPx(40, 6 * TILE + 5)).toBe('solid'); // sealed floor
+    expect(m.solidAtPx(40, 6 * TILE + 5)).toBe('pass'); // OPEN VOID below
     expect(m.solidAtPx(40, -5)).toBe('pass'); // open sky
   });
 });

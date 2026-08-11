@@ -77,6 +77,9 @@ export class CutsceneScene implements SceneLike {
     const beat = this.script.beats[Math.min(this.beat, this.script.beats.length - 1)];
     if (!beat) return;
     drawCutsceneArt(ctx, beat.art, this.frame);
+    // The art layer may leave textAlign centered; the dialog owns its state.
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
 
     // Letterbox dialog box over the bottom.
     const boxH = 84;

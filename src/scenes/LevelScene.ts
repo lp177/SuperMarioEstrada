@@ -152,10 +152,9 @@ export class LevelScene implements SceneLike {
     const scam = { x: cam.x + shake.x, y: cam.y + shake.y };
 
     drawBackground(ctx, this.level.def.theme, scam, this.frame);
-    ctx.save();
-    ctx.translate(-Math.round(scam.x), -Math.round(scam.y));
+    // drawDecor subtracts the camera itself — pass cam, do NOT also translate
+    // (double-offsetting sent trucks and grass into the sky; one owner only).
     drawDecor(ctx, this.decor, scam, 'back', this.frame);
-    ctx.restore();
     drawTiles(ctx, this.level, scam);
     this.fx.renderGround(ctx, scam);
     drawEntities(ctx, this.level, scam, this.frame);
@@ -163,10 +162,7 @@ export class LevelScene implements SceneLike {
     drawPlayer(ctx, this.level.player, scam, this.frame);
     drawGoal(ctx, this.level, scam, this.frame);
     this.fx.renderAir(ctx, scam);
-    ctx.save();
-    ctx.translate(-Math.round(scam.x), -Math.round(scam.y));
     drawDecor(ctx, this.decor, scam, 'front', this.frame);
-    ctx.restore();
 
     const flash = this.fx.flash();
     if (flash) {
@@ -186,6 +182,9 @@ export class LevelScene implements SceneLike {
 
   private renderSting(ctx: CanvasRenderingContext2D): void {
     const def = this.level.def;
+    ctx.save();
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     panel(ctx, 60, 90, VIEW_W - 120, 150, { focus: true });
     ctx.font = UI.fontHead;
     textShadow(ctx, 'MISSION FAILED SUCCESSFULLY', 108, 122, UI.accent);
@@ -208,20 +207,36 @@ export class LevelScene implements SceneLike {
       ctx.font = UI.fontSmall;
       textShadow(ctx, 'JUMP: continue', VIEW_W / 2 - 40, 228, UI.textDim);
     }
+    ctx.restore();
   }
 
   private renderPause(ctx: CanvasRenderingContext2D): void {
+    // World painters may leave textAlign centered — the UI owns its own state.
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
     ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    panel(ctx, VIEW_W / 2 - 90, 120, 180, 108, { focus: true });
+    const pw = 224;
+    const ph = 118;
+    const px = (VIEW_W - pw) / 2;
+    const py = (VIEW_H - ph) / 2 - 20;
+    panel(ctx, px, py, pw, ph, { focus: true });
+    const cx = VIEW_W / 2;
     ctx.font = UI.fontHead;
-    textShadow(ctx, 'ON BREAK', VIEW_W / 2 - 44, 144, UI.accent);
+    textShadow(ctx, 'ON BREAK', cx, py + 30, UI.accent);
     ctx.font = UI.fontBody;
-    let y = 170;
+    let y = py + 58;
     for (let i = 0; i < PAUSE_ITEMS.length; i++) {
+      const item = PAUSE_ITEMS[i] ?? '';
       const focus = i === this.pauseSel;
-      textShadow(ctx, (focus ? '▶ ' : '  ') + PAUSE_ITEMS[i], VIEW_W / 2 - 66, y, focus ? UI.accent : UI.text);
-      y += 19;
+      textShadow(ctx, item, cx, y, focus ? UI.accent : UI.text);
+      if (focus) {
+        const w = ctx.measureText(item).width;
+        textShadow(ctx, '▶', cx - w / 2 - 14, y, UI.accent);
+      }
+      y += 20;
     }
+    ctx.restore();
   }
 }

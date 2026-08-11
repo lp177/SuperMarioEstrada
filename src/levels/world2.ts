@@ -9,10 +9,21 @@
 //
 // Authoring rules honored here (see AGENTS.md + tests/actContract.ts):
 // - Acts are motif chains on {endX, endRow}; local helpers below extend the
-//   vocabulary (spike pits, chute drops, oneway sky ladders, goldbar vaults,
-//   crumble-over-spikes) and validate LOUDLY like motifs do.
+//   vocabulary (spike pits, stepped chute drops, oneway sky ladders, goldbar
+//   vaults, alcove pockets, crumble-over-spikes) and validate LOUDLY like
+//   motifs do.
 // - The mandatory route is flow-bot-clearable: gaps <= 5, climbs <= 3 rows
 //   (walls up to ~6 are fine — the bot full-holds), drops land on wide strips.
+// - 2026-08 playtest retune: descents step in <= 2-row treads (rule 8 — a
+//   sheer safe face is a nap), every void gap gets >= 8 flat sprint tiles
+//   before its lip (rule 5 at runMax 3.8), and no brick lid ever overhangs
+//   a pocket's exit arc (rule 9 / the playtest trap).
+// - WARP FEATURES (one per flavor, rule 7-clean, laid at the END of build so
+//   later tile work can never overwrite a mouth): w2a1 skim vault (bonus
+//   coin room under the checkpoint stretch), w2a5 service bypass (honest
+//   shortcut past the crumble/gavel gauntlet), w2a7 money vault (goldbar 4
+//   + hoard under the final stretch). Vault rooms sit below the lane and are
+//   fed/drained by warp pairs; the flood-fill gate follows the links.
 // - Idle silence: everything that can walk/fly/hop TOWARD an idle player is
 //   placed beyond its 600-frame reach (rats ~41 tiles, paparazzi ~30,
 //   chipstacks ~14, walkers ~19). Gavels & lawyers sit > 27 tiles out.
@@ -70,24 +81,36 @@ function spikePit(
   return { endX: x + 6 + gap, endRow: row };
 }
 
-/** chuteDrop — a coin chute: the lane sheers `drop` rows down; a coin column
- *  marks the fall line and a WIDE landing strip (>= 12 tiles) catches both a
- *  walk-off player and the bot's lip jump (which carries ~9 tiles). */
+/** chuteDrop — a coin chute: the lane descends `drop` rows onto a WIDE
+ *  landing strip (>= 12 tiles), in 2-row TREADS. Rule 8 (2026-08 playtest):
+ *  the old sheer 4-row face over a safe floor was a "nap, not an obstacle" —
+ *  stepped <= 2-row hops never form a recess, and this is the gentle world
+ *  opener's descent, not a hazard. Coins trace the fall line as before. */
 function chuteDrop(
   b: LevelBuilderLike,
   x: number,
   row: number,
   opts: { drop: number; land?: number },
 ): MotifEnd {
-  const drop = requireInt(opts.drop, 3, 6, 'chuteDrop drop');
+  const drop = requireInt(opts.drop, 4, 6, 'chuteDrop drop');
+  if (drop % 2 !== 0) {
+    throw new Error(`chuteDrop drop must be even (2-row treads), got ${drop}`);
+  }
   const land = requireInt(opts.land ?? 16, 12, 30, 'chuteDrop land');
   const floor = row + drop;
   if (floor > b.heightTiles - 6) {
     throw new Error(`chuteDrop: landing row ${floor} leaves the running lane`);
   }
   b.ground(x, x + 2, row); // the lip
-  b.ground(x + 3, x + 2 + land, floor); // landing strip
-  for (let r = row + 1; r < floor; r++) b.coin(x + 4, r); // the chute (drop-1 coins)
+  const treads = drop / 2 - 1;
+  for (let i = 0; i < treads; i++) {
+    b.ground(x + 3 + 2 * i, x + 4 + 2 * i, row + 2 * (i + 1)); // 2-wide tread
+    b.coin(x + 4 + 2 * i, row + 2 * i + 1); // coin over the tread
+  }
+  const lx = x + 3 + 2 * treads;
+  b.ground(lx, x + 2 + land, floor); // landing strip
+  b.coin(lx + 1, floor - 1); // the chute spills onto the landing
+  b.coin(lx + 2, floor - 1);
   return { endX: x + 3 + land, endRow: floor };
 }
 
@@ -121,6 +144,36 @@ function goldbarVault(
   b.platform(x + 2, x + 3, row, 'brick'); // the lid
   b.goldbar(opts.index, x + 3, row + 2);
   b.ground(x + 4, x + 4, row);
+  return { endX: x + 5, endRow: row };
+}
+
+/** alcovePocket — the REWORKED secret pocket (2026-08 playtest: the classic
+ *  secretPocket's brick lid overhangs the exit arc — the exact trap shape the
+ *  playtest hit). Here the lid shifts LEFT over a side alcove and the exit
+ *  well is open sky:
+ *    x       : shoulder ground at R
+ *    x+1/x+2 : ALCOVE — brick lid at R-1, hollow R..R+1 (32px: Certified
+ *              Estrada fits standing), the secret tucked at R+1 under bricks
+ *    x+3     : EXIT WELL — same floor (R+2, a 2-row hop out), nothing above
+ *    x+4     : shoulder ground at R
+ *  The 1-high lid is a plain wall-hop for the lane (reads like a 1-high
+ *  pipe); the flow bot full-jumps it and overflies the whole feature. The
+ *  well is 2 deep against its right shoulder, so it never scans as a recess
+ *  and can never violate rules 8/9. */
+function alcovePocket(
+  b: LevelBuilderLike,
+  x: number,
+  row: number,
+  opts: { index: number },
+): MotifEnd {
+  if (row + 2 >= b.heightTiles) {
+    throw new Error(`alcovePocket: floor ${row + 2} falls off the map`);
+  }
+  b.ground(x, x, row); // left shoulder
+  b.ground(x + 1, x + 3, row + 2); // flat alcove + well floor (2 deep)
+  b.platform(x + 1, x + 2, row - 1, 'brick'); // lid over the ALCOVE only
+  b.ground(x + 4, x + 4, row); // right shoulder
+  b.secret(opts.index, x + 1, row + 1); // under the bricks
   return { endX: x + 5, endRow: row };
 }
 
@@ -161,9 +214,12 @@ function finishTo(b: LevelBuilderLike, x: number, row: number, width: number): v
 
 export const world2: LevelDef[] = [
   // -------------------------------------------------------------------------
-  // w2a1 — the descent into the laundering office: three big coin chutes, the
-  // lane sheering ever deeper (16 -> 20 -> 24 -> 28), oneway grate ladders
-  // rising to skimmed goldbars. Gentle: gaps of 3, walker enemies only.
+  // w2a1 — the descent into the laundering office: two big stepped coin
+  // chutes (16 -> 20 -> 24, then steppes to 28), oneway grate ladders rising
+  // to skimmed goldbars. Gentle: gaps of 3, walker enemies only. NEW: the
+  // SKIM VAULT — a warp pipe on the long runway dives into a coin room
+  // carved under the checkpoint stretch (the skimmed take, still in the
+  // dryer), and a second pipe pops back up on the gap-jump landing ahead.
   // -------------------------------------------------------------------------
   {
     id: 'w2a1',
@@ -176,11 +232,11 @@ export const world2: LevelDef[] = [
     build(b) {
       let c = runway(b, 0, 16, { len: 12, coinRow: 12, rings: true }); // -> 12 (16 coins)
       b.start(2, 15);
-      c = chuteDrop(b, c.endX, c.endRow, { drop: 4, land: 16 }); // -> 31, row 20 (+3)
+      c = chuteDrop(b, c.endX, c.endRow, { drop: 4, land: 16 }); // -> 31, row 20 (+3, 2-row treads)
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'lobbyist'] }); // -> 42
       c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // -> 52 (+2)
       c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 60
-      c = chuteDrop(b, c.endX, c.endRow, { drop: 4, land: 16 }); // -> 79, row 24 (+3)
+      c = chuteDrop(b, c.endX, c.endRow, { drop: 4, land: 16 }); // -> 79, row 24 (+3, 2-row treads)
       c = runway(b, c.endX, c.endRow, { len: 15, coinRow: 21 }); // -> 94 (+13)
       c = checkpointRest(b, c.endX, c.endRow); // -> 100 (+3, checkpoint @ 96)
       c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 105
@@ -194,7 +250,17 @@ export const world2: LevelDef[] = [
       c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 162
       c = skyLadder(b, c.endX, c.endRow, { index: 3 }); // -> 170
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 176
-      finishTo(b, c.endX, c.endRow, 188); // coins total: 43
+      finishTo(b, c.endX, c.endRow, 188); // coins total: 45 + 14 vault
+      // THE SKIM VAULT (bonus): stand on the drain pipe at cols 84-85 on the
+      // long runway, press down, loot the hoard carved under the checkpoint
+      // stretch, ride the far pipe back up to a flush grate on the gap-jump
+      // landing (cols 118-119). Laid after the chain so no later tile work
+      // can overwrite a mouth (rule 7).
+      b.room(98, 110, 28, 31); // vault: floor row 32, ceiling row 27
+      b.warpPipe(84, 22, 2, 98, 30, 2); // runway drain -> vault floor
+      b.warpPipe(108, 30, 2, 118, 24, 2); // vault -> flush grate ahead
+      b.coinRow(101, 107, 30); // the hoard: 14 coins
+      b.coinRow(101, 107, 31);
     },
   },
 
@@ -202,6 +268,10 @@ export const world2: LevelDef[] = [
   // w2a2 — the wash lanes proper: long coin-laden conveyors ("delicates"),
   // the world's first lawyer plant, first spike pits, and the goldpen debuts
   // in a brick gallery. Decor cue: dryer drums full of coin rolls.
+  // Retuned 2026-08: the first void gap gets a real sprint runway (the old
+  // 5-tile approach launched jumps under speed — 19+ deaths in playtest),
+  // and secret 0's lidded tunnel became an alcovePocket (no lid over the
+  // exit arc).
   // -------------------------------------------------------------------------
   {
     id: 'w2a2',
@@ -218,22 +288,23 @@ export const world2: LevelDef[] = [
       c = gapJump(b, c.endX, c.endRow, { gap: 3 }); // -> 31
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 42
       c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // -> 53 (lawyer @ 44)
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 63 (+6)
-      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 68
-      c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 76
-      c = checkpointRest(b, c.endX, c.endRow); // -> 82 (+3, checkpoint @ 78)
-      c = spikePit(b, c.endX, c.endRow, { gap: 3 }); // -> 91
-      c = runway(b, c.endX, c.endRow, { len: 10, coinRow: 22, rings: true }); // -> 101 (+11)
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // -> 107
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'chipstack'] }); // -> 118 (rat @ 110)
-      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 123
-      c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'goldpen' }); // -> 131 (+1)
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 141 (+6)
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 }); // -> 147
-      c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 157
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 162
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 168
-      c = skyLadder(b, c.endX, c.endRow, { index: 4 }); // -> 176
+      c = runway(b, c.endX, c.endRow, { len: 3 }); // -> 56 (sprint runway: 8 flat tiles before the lip)
+      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 66 (+6, void gap 59-62)
+      c = alcovePocket(b, c.endX, c.endRow, { index: 0 }); // -> 71 (lid over the alcove, exit well open)
+      c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 79
+      c = checkpointRest(b, c.endX, c.endRow); // -> 85 (+3, checkpoint @ 81)
+      c = spikePit(b, c.endX, c.endRow, { gap: 3 }); // -> 94
+      c = runway(b, c.endX, c.endRow, { len: 10, coinRow: 22, rings: true }); // -> 104 (+11)
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // -> 110
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'chipstack'] }); // -> 121 (rat @ 113)
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 126
+      c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'goldpen' }); // -> 134 (+1)
+      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 144 (+6)
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 }); // -> 150
+      c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 160
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 165
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 171
+      c = skyLadder(b, c.endX, c.endRow, { index: 4 }); // -> 179
       finishTo(b, c.endX, c.endRow, 190); // coins total: 45
     },
   },
@@ -359,6 +430,13 @@ export const world2: LevelDef[] = [
       c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 180
       c = skyLadder(b, c.endX, c.endRow, { index: 4 }); // -> 188
       finishTo(b, c.endX, c.endRow, 200); // coins total: 48
+      // THE SERVICE BYPASS (honest shortcut): a maintenance pipe on the
+      // mezzanine checkpoint ledge (cols 74-75) dives under the whole
+      // crumble-spike / goldpen-gallery / rat+gavel stretch and surfaces
+      // flush just past the gavel (cols 109-110). Explorers skip the
+      // gauntlet — and forgo its coins and the goldpen. Laid after the
+      // chain so nothing overwrites the mouths (rule 7).
+      b.warpPipe(74, 18, 2, 109, 20, 2);
     },
   },
 
@@ -409,7 +487,10 @@ export const world2: LevelDef[] = [
   // -------------------------------------------------------------------------
   // w2a7 — the trunk line: three pipe fields crawling with lawyer plants,
   // goldbars sitting brazenly on pipe mouths, the surveillance drone
-  // ("TOTALLY A BIRD"), and the world's widest spike pits. Hard.
+  // ("TOTALLY A BIRD"), and the world's widest spike pits. Hard. NEW: THE
+  // MONEY VAULT — goldbar 4 moved off its perch into a coin-stuffed room
+  // under the final stretch; a flush drain grate (cols 180-181) drops you
+  // in, the same shaft (cols 190-191) climbs back out before the door.
   // -------------------------------------------------------------------------
   {
     id: 'w2a7',
@@ -441,9 +522,22 @@ export const world2: LevelDef[] = [
       c = skyLadder(b, c.endX, c.endRow, { index: 2 }); // -> 162
       c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 167
       c = spikePit(b, c.endX, c.endRow, { gap: 5 }); // -> 178
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 184
+      b.ground(c.endX, c.endX + 5, c.endRow); // vault antechamber (bar 4's old perch spot)
+      c = { endX: c.endX + 6, endRow: c.endRow }; // -> 184
       c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 189
-      finishTo(b, c.endX, c.endRow, 200); // coins total: 43
+      finishTo(b, c.endX, c.endRow, 200); // coins total: 43 + 15 vault
+      // THE MONEY VAULT: flush drain grate at cols 180-181 (press down) into
+      // the room under the final stretch — goldbar 4 waits at the far end
+      // behind the coin hoard; the return shaft at cols 190-191 surfaces two
+      // tiles before the goal door. Laid after the chain (rule 7).
+      b.room(184, 196, 29, 32); // vault: floor row 33
+      b.warpPipe(180, 25, 2, 184, 31, 2); // drain grate -> vault floor
+      b.warpPipe(190, 31, 2, 190, 25, 2); // the same shaft back up
+      b.coinRow(187, 189, 31); // the hoard: 15 coins around the shaft
+      b.coinRow(187, 189, 32);
+      b.coinRow(192, 196, 31);
+      b.coinRow(192, 195, 32);
+      b.goldbar(4, 196, 32); // the take, vaulted where they think it is safe
     },
   },
 
@@ -472,19 +566,20 @@ export const world2: LevelDef[] = [
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 41
       c = crumbleSpikes(b, c.endX, c.endRow, { len: 6, coins: true }); // -> 51 (+6)
       c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // -> 62 (lawyer @ 53)
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 72 (+6)
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 83
-      c = checkpointRest(b, c.endX, c.endRow); // -> 89 (+3, checkpoint @ 85)
-      c = runway(b, c.endX, c.endRow, { len: 12, coinRow: 22, rings: true }); // -> 101 (+16)
-      c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 109
-      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 114
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // -> 120
-      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 125
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 }); // -> 131
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 136
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 142
-      c = skyLadder(b, c.endX, c.endRow, { index: 4 }); // -> 150
-      arenaApproach(b, c.endX, c.endRow, { width: 29 }); // arena 156..184, goal @ 180, endX 185
+      c = runway(b, c.endX, c.endRow, { len: 3 }); // -> 65 (sprint runway: 8 flat tiles before the lip)
+      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 75 (+6, void gap 68-71)
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 86
+      c = checkpointRest(b, c.endX, c.endRow); // -> 92 (+3, checkpoint @ 88)
+      c = runway(b, c.endX, c.endRow, { len: 12, coinRow: 22, rings: true }); // -> 104 (+16)
+      c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 112
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 117
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // -> 123
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 128
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 }); // -> 134
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 139
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 145
+      c = skyLadder(b, c.endX, c.endRow, { index: 4 }); // -> 153
+      arenaApproach(b, c.endX, c.endRow, { width: 26 }); // arena 159..184, goal @ 180, endX 185
     },
   },
 ];

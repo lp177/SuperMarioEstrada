@@ -3,10 +3,12 @@
 // ordinals. Pure simulation data: no DOM, no clocks, no randomness.
 //
 // Out-of-bounds semantics (contract, see TileMapLike in types.ts):
-//   - left / right / below the map  -> 'bedrock'  (the world is walled in)
+//   - left / right of the map       -> 'bedrock'  (the world is walled in)
+//   - below the map bottom          -> 'empty'    (OPEN VOID — falling out
+//     kills; a sealed bottom once turned every pit into a riskless shaft)
 //   - above the map top (ty < 0)    -> 'empty'    (open sky; jumping over the
-//     top edge must never headbonk). Side walls win over sky: an OOB column
-//     is 'bedrock' at ANY ty, including negative ones, so the player cannot
+//     top edge must never headbonk). Side walls win over sky AND void: an OOB
+//     column is 'bedrock' at ANY ty, including negative ones, so the player cannot
 //     escape sideways by flying above the map.
 // ============================================================================
 
@@ -71,7 +73,12 @@ export class TileMap implements TileMapLike {
     const y = Math.floor(ty);
     if (x < 0 || x >= this.wTiles) return 'bedrock'; // side walls (any height)
     if (y < 0) return 'empty'; // open sky above the top
-    if (y >= this.hTiles) return 'bedrock'; // sealed floor below
+    // Below the map is OPEN VOID — falling past the bottom edge must kill
+    // (level.ts kills at y > pixelH + 32). This was 'bedrock' once, which
+    // silently sealed every "bottomless" pit into a riskless safe shaft (or
+    // a softlock when its walls were unjumpable) and made the void-death
+    // path unreachable dead code. Classic pits require a real abyss.
+    if (y >= this.hTiles) return 'empty';
     const ord = this.tiles[y * this.wTiles + x];
     if (ord === undefined) throw new Error(`TileMap index out of range at ${x},${y}`); // unreachable, satisfies noUncheckedIndexedAccess honestly
     const kind = ORD_TILE[ord];

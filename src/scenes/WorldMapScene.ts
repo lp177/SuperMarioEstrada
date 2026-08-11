@@ -1,29 +1,49 @@
-import type { LevelId, SceneLike, SceneParams, ThemeId, WorldNo } from '../core/types.ts';
+import type { LevelId, SceneLike, SceneParams, WorldNo } from '../core/types.ts';
 import { VIEW_H, VIEW_W } from '../core/constants.ts';
 import type { Game, Services } from '../game/game.ts';
 import { LEVELS } from '../levels/index.ts';
 import { CASTLES, continueAtMap, mapOf, unlockedIds, worldOf, WORLD_MAPS } from '../levels/maps.ts';
+import {
+  drawEdgePath, drawFog, drawNode, drawPuff, drawTerrain, drawToken, drawWoodSign,
+  edgePoint, listEdges, MAP_W, nodePos,
+} from '../render/mapArt.ts';
 import { MenuNav } from '../ui/menuInput.ts';
 import { UI, panel, textShadow } from '../ui/theme.ts';
 
 // ============================================================================
-// The conspiracy corkboard. Each world is a board of pinned polaroids (acts)
-// tied together with red yarn. Estrada's pin walks the graph; cleared acts
-// stay replayable; optional spurs dangle off the route. ESC backs to title.
+// The world map: ONE continuous Super-Mario-World-style overworld. All 30
+// acts live on a single 2560x360 kingdom (four themed regions), the camera
+// smooth-follows Estrada's token, and moving focus WALKS the token along the
+// beaded trail to the neighbour (one pending move may queue). Locked future
+// regions are visible under fog — the player sees the whole campaign ahead.
+// Contract preserved: MenuNav drives the graph both ways, select enters
+// unlocked acts only, back -> title, music.playHome() on entry.
 // ============================================================================
 
-const THEME_TINT: Record<ThemeId, string> = {
-  meadow: '#4c8f4c',
-  sewer: '#40695c',
-  casino: '#6d4a91',
-  castle: '#8a4444',
-};
+/** Frames a walk takes per pixel of trail, clamped to a snappy range. */
+const WALK_MIN = 12;
+const WALK_MAX = 20;
+/** Camera smoothing factor per frame. */
+const CAM_EASE = 0.12;
+
+function clampCam(x: number): number {
+  return Math.max(0, Math.min(MAP_W - VIEW_W, x));
+}
+
+function easeInOut(t: number): number {
+  return t * t * (3 - 2 * t);
+}
 
 export class WorldMapScene implements SceneLike {
   private frame = 0;
-  private world: WorldNo;
   private at: LevelId;
   private nav: MenuNav;
+  private camX: number;
+  private token: { x: number; y: number };
+  private facing: 1 | -1 = 1;
+  private walk: { from: LevelId; to: LevelId; t: number; dur: number } | null = null;
+  private pending: LevelId | null = null;
+  private puffs: { x: number; y: number; age: number }[] = [];
 
   constructor(
     private readonly game: Game,
@@ -31,19 +51,45 @@ export class WorldMapScene implements SceneLike {
     params: SceneParams['worldmap'],
   ) {
     this.at = params.focus ?? continueAtMap(services.progress);
-    this.world = worldOf(this.at);
     this.nav = new MenuNav(services.input);
+    this.token = nodePos(this.at);
+    this.camX = clampCam(this.token.x - VIEW_W * 0.5);
     services.music.playHome();
-  }
-
-  private get map() {
-    return mapOf(this.world);
   }
 
   update(): void {
     this.frame++;
     const { input, sfx, progress } = this.services;
     if (input.edges().size > 0) sfx.ensure();
+
+    // advance the walk (and the dust it kicks up)
+    if (this.walk) {
+      const w = this.walk;
+      w.t++;
+      if (w.t >= w.dur) {
+        this.token = nodePos(w.to);
+        this.walk = null;
+        if (this.pending) {
+          const next = this.pending;
+          this.pending = null;
+          this.startWalk(next);
+        }
+      } else {
+        const p = edgePoint(w.from, w.to, easeInOut(w.t / w.dur));
+        this.token = p;
+        if (w.t % 3 === 0 && !this.services.reducedMotion()) {
+          this.puffs.push({ x: p.x - this.facing * 5, y: p.y - 4, age: 0 });
+        }
+      }
+    }
+    for (const p of this.puffs) p.age++;
+    this.puffs = this.puffs.filter(p => p.age < 18);
+
+    // camera smooth-follows the token, clamped to the kingdom
+    const target = clampCam(this.token.x - VIEW_W * 0.5);
+    this.camX += (target - this.camX) * CAM_EASE;
+    if (Math.abs(target - this.camX) < 0.4) this.camX = target;
+
     const action = this.nav.poll();
     if (!action) return;
     const open = unlockedIds(progress);
@@ -64,210 +110,154 @@ export class WorldMapScene implements SceneLike {
       return;
     }
 
-    // Directional navigation: move to the best-matching unlocked neighbour
-    // (graph edges are walkable both ways).
-    const here = this.map.nodes.find(n => n.levelId === this.at);
-    if (!here) return;
+    // Directional navigation from the logical focus (the walk's destination
+    // while walking). At most ONE move queues behind an in-flight walk.
+    const best = this.pickNeighbour(this.at, action, open);
+    if (!best) return;
+    if (this.walk) {
+      if (!this.pending) this.pending = best;
+      return;
+    }
+    this.startWalk(best);
+  }
+
+  private startWalk(to: LevelId): void {
+    const from = this.at;
+    const a = nodePos(from);
+    const b = nodePos(to);
+    const dist = Math.hypot(b.x - a.x, b.y - a.y);
+    this.walk = {
+      from,
+      to,
+      t: 0,
+      dur: Math.max(WALK_MIN, Math.min(WALK_MAX, Math.round(dist / 7))),
+    };
+    this.facing = b.x >= a.x ? 1 : -1;
+    this.at = to;
+    this.services.sfx.play('ui-move');
+  }
+
+  /** Best unlocked neighbour of `from` in the pressed direction. Graph edges
+   *  are walkable both ways; castles bridge to the next world's entry and
+   *  entries bridge back — all in continuous kingdom coordinates. */
+  private pickNeighbour(
+    from: LevelId,
+    action: 'up' | 'down' | 'left' | 'right',
+    open: ReadonlySet<LevelId>,
+  ): LevelId | null {
+    const world = worldOf(from);
+    const map = mapOf(world);
+    const here = map.nodes.find(n => n.levelId === from);
+    if (!here) return null;
     const neighbours = new Set<LevelId>(here.next);
-    for (const n of this.map.nodes) if (n.next.includes(this.at)) neighbours.add(n.levelId);
-    // Castle bridges to next world entry; entry bridges back.
-    if (this.at === CASTLES[this.world] && progress.cleared[this.at]) {
-      const nm = WORLD_MAPS.find(m => m.world === this.world + 1);
+    for (const m of WORLD_MAPS) {
+      for (const n of m.nodes) if (n.next.includes(from)) neighbours.add(n.levelId);
+    }
+    if (from === CASTLES[world]) {
+      const nm = WORLD_MAPS.find(m => m.world === world + 1);
       if (nm) neighbours.add(nm.entry);
     }
-    if (this.at === this.map.entry && this.world > 1) {
-      neighbours.add(CASTLES[(this.world - 1) as WorldNo]);
+    if (from === map.entry && world > 1) {
+      neighbours.add(CASTLES[(world - 1) as WorldNo]);
     }
 
     const dir = { up: [0, -1], down: [0, 1], left: [-1, 0], right: [1, 0] }[action];
-    if (!dir) return;
+    const p0 = nodePos(from);
     let best: LevelId | null = null;
     let bestScore = Infinity;
     for (const id of neighbours) {
       if (!open.has(id)) continue;
-      const other = WORLD_MAPS.flatMap(m => m.nodes).find(n => n.levelId === id);
-      if (!other) continue;
-      // Cross-world neighbours project beyond the screen edge.
-      const sameWorld = worldOf(id) === this.world;
-      const ox = sameWorld ? other.x : (worldOf(id) > this.world ? VIEW_W + 80 : -80);
-      const oy = sameWorld ? other.y : here.y;
-      const dx = ox - here.x;
-      const dy = oy - here.y;
+      const p1 = nodePos(id);
+      const dx = p1.x - p0.x;
+      const dy = p1.y - p0.y;
       const along = dx * dir[0]! + dy * dir[1]!;
       if (along <= 8) continue; // must actually be in that direction
       const across = Math.abs(dx * dir[1]! + dy * dir[0]!);
       const score = along + across * 2;
-      if (score < bestScore) { bestScore = score; best = id; }
+      if (score < bestScore) {
+        bestScore = score;
+        best = id;
+      }
     }
-    if (best) {
-      this.at = best;
-      this.world = worldOf(best);
-      this.services.sfx.play('ui-move');
-    }
+    return best;
   }
 
   render(ctx: CanvasRenderingContext2D): void {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.drawCorkboard(ctx);
-
+    const camX = Math.round(this.camX);
     const { progress } = this.services;
     const open = unlockedIds(progress);
-    const map = this.map;
+    let maxWorld: WorldNo = 1;
+    for (const id of open) {
+      const w = worldOf(id);
+      if (w > maxWorld) maxWorld = w;
+    }
 
-    // Red conspiracy yarn between nodes (dashed when the far node is locked).
-    for (const n of map.nodes) {
-      for (const nx of n.next) {
-        const o = map.nodes.find(m => m.levelId === nx);
-        if (!o) continue;
-        ctx.strokeStyle = open.has(nx) ? '#c62828' : 'rgba(198,40,40,0.35)';
-        ctx.lineWidth = 2;
-        ctx.setLineDash(open.has(nx) ? [] : [4, 4]);
-        ctx.beginPath();
-        // yarn sags a little between pins
-        const mx = (n.x + o.x) / 2;
-        const my = Math.max(n.y, o.y) + 14;
-        ctx.moveTo(n.x, n.y);
-        ctx.quadraticCurveTo(mx, my, o.x, o.y);
-        ctx.stroke();
+    drawTerrain(ctx, camX, this.frame);
+
+    // trails, then the fog of the future, then every node crisp on top
+    for (const e of listEdges()) {
+      drawEdgePath(ctx, camX, e.a, e.b, open.has(e.a) && open.has(e.b));
+    }
+    drawFog(ctx, camX, this.frame, maxWorld);
+    for (const map of WORLD_MAPS) {
+      const castleId = CASTLES[map.world];
+      for (const n of map.nodes) {
+        drawNode(ctx, camX, n.levelId, {
+          unlocked: open.has(n.levelId),
+          cleared: !!progress.cleared[n.levelId],
+          focus: n.levelId === this.at,
+          optional: n.optional === true,
+          castle: n.levelId === castleId,
+          final: n.levelId === CASTLES[4],
+        }, this.frame);
       }
     }
-    ctx.setLineDash([]);
 
-    for (const n of map.nodes) this.polaroid(ctx, n.levelId, n.x, n.y, open.has(n.levelId));
+    for (const p of this.puffs) drawPuff(ctx, camX, p.x, p.y, p.age);
+    drawToken(ctx, camX, this.token.x, this.token.y, this.frame, {
+      walking: this.walk !== null,
+      facing: this.facing,
+      bob: !this.services.reducedMotion(),
+    });
 
-    // Header: world name on masking tape + the producer credit.
-    ctx.fillStyle = 'rgba(240,230,200,0.92)';
-    ctx.fillRect(VIEW_W / 2 - 130, 10, 260, 24);
-    ctx.font = UI.fontHead;
-    textShadow(ctx, `W${this.world} — ${map.name}`, VIEW_W / 2 - 118, 27, '#4a3320');
-    ctx.font = UI.fontSmall;
-    textShadow(ctx, `a production of: ${map.producer}`, VIEW_W / 2 - 118, 44, UI.accent);
+    this.drawHud(ctx);
+  }
 
-    // Footer legend + focused level info.
+  private drawHud(ctx: CanvasRenderingContext2D): void {
+    const { progress } = this.services;
+    const open = unlockedIds(this.services.progress);
+    const map = mapOf(worldOf(this.at));
+
+    drawWoodSign(
+      ctx, VIEW_W / 2,
+      `W${map.world} — ${map.name}`,
+      `a production of: ${map.producer}`,
+    );
+
     const def = LEVELS.find(d => d.id === this.at);
     const best = progress.cleared[this.at];
-    panel(ctx, 8, VIEW_H - 40, VIEW_W - 16, 32, {});
+    panel(ctx, 8, VIEW_H - 34, VIEW_W - 16, 26, {});
     ctx.font = UI.fontBody;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     const label = def ? def.title : 'SET STILL UNDER CONSTRUCTION';
-    textShadow(ctx, `${this.at.toUpperCase()}  ${label}`, 18, VIEW_H - 20, UI.text);
+    textShadow(ctx, `${this.at.toUpperCase()}  ${label}`, 18, VIEW_H - 16, UI.text);
+    ctx.textAlign = 'right';
     if (best) {
       textShadow(
         ctx,
-        `best: ¢${best.coins}  ▮${best.goldbars}/5  ★${best.secrets}/3  — replayable`,
-        330, VIEW_H - 20, UI.accent,
+        `best: ¢${best.coins}  ▮${best.goldbars}/5  ★${best.secrets}/3 — replayable`,
+        VIEW_W - 18, VIEW_H - 16, UI.accent,
       );
-    }
-    ctx.font = UI.fontSmall;
-    textShadow(ctx, 'ESC: title', VIEW_W - 70, VIEW_H - 46, UI.textDim);
-  }
-
-  private drawCorkboard(ctx: CanvasRenderingContext2D): void {
-    // Cork texture: warm base + deterministic speckles.
-    ctx.fillStyle = '#8d6b48';
-    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
-    for (let i = 0; i < 260; i++) {
-      const x = (i * 97) % VIEW_W;
-      const y = (i * 173 + ((i * i) % 29)) % VIEW_H;
-      ctx.fillStyle = i % 3 ? 'rgba(0,0,0,0.08)' : 'rgba(255,255,255,0.05)';
-      ctx.fillRect(x, y, 3, 2);
-    }
-    // Wooden frame.
-    ctx.strokeStyle = '#5d4630';
-    ctx.lineWidth = 10;
-    ctx.strokeRect(5, 5, VIEW_W - 10, VIEW_H - 10);
-    // A few stray sticky notes (the conspirators' notes to self).
-    const notes: [number, number, string][] = [
-      [560, 60, 'DENY'], [40, 90, 'ODDS 1M:1'], [575, 300, 'WIG GLUE'],
-    ];
-    ctx.font = UI.fontSmall;
-    for (const [x, y, t] of notes) {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(((x + y) % 7 - 3) * 0.03);
-      ctx.fillStyle = '#efe28a';
-      ctx.fillRect(-22, -14, 44, 28);
-      ctx.fillStyle = '#4a3320';
-      ctx.fillText(t, -18, 4);
-      ctx.restore();
-    }
-  }
-
-  private polaroid(ctx: CanvasRenderingContext2D, id: LevelId, x: number, y: number, unlocked: boolean): void {
-    const { progress } = this.services;
-    const map = this.map;
-    const node = map.nodes.find(n => n.levelId === id);
-    const cleared = !!progress.cleared[id];
-    const isCastle = CASTLES[this.world] === id;
-    const focus = id === this.at;
-    const w = isCastle ? 52 : 42;
-    const h = isCastle ? 46 : 38;
-
-    ctx.save();
-    ctx.translate(x, y);
-    const idn = Number(id[3]) || 0;
-    ctx.rotate(((idn % 5) - 2) * 0.035 + (focus ? Math.sin(this.frame / 20) * 0.02 : 0));
-    // photo frame
-    ctx.fillStyle = focus ? '#fffef5' : '#eae6d8';
-    ctx.fillRect(-w / 2, -h / 2, w, h);
-    // picture area
-    ctx.fillStyle = unlocked ? THEME_TINT[map.theme] : '#3a3a3a';
-    ctx.fillRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 14);
-    ctx.font = UI.fontSmall;
-    if (!unlocked) {
-      ctx.fillStyle = '#111';
-      ctx.fillText('?', -2, 2);
-    } else if (isCastle) {
-      // tiny castle glyph + red marker circle
-      ctx.fillStyle = '#222';
-      ctx.fillRect(-8, -10, 16, 12);
-      ctx.fillRect(-10, -14, 4, 6);
-      ctx.fillRect(6, -14, 4, 6);
-      ctx.strokeStyle = '#c62828';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.ellipse(0, -2, w / 2 + 5, h / 2 + 4, 0.2, 0, Math.PI * 2);
-      ctx.stroke();
+    } else if (open.has(this.at)) {
+      textShadow(ctx, 'princess not yet rescued (as planned)', VIEW_W - 18, VIEW_H - 16, UI.textDim);
     } else {
-      // tiny hills glyph
-      ctx.fillStyle = 'rgba(255,255,255,0.7)';
-      ctx.beginPath();
-      ctx.arc(-6, 0, 6, Math.PI, 0);
-      ctx.arc(6, 2, 8, Math.PI, 0);
-      ctx.fill();
+      textShadow(ctx, 'locked — clear the route first', VIEW_W - 18, VIEW_H - 16, UI.textDim);
     }
-    // caption
-    ctx.fillStyle = '#4a3320';
-    ctx.fillText(id.toUpperCase(), -w / 2 + 4, h / 2 - 4);
-    // status stamps
-    if (cleared) {
-      ctx.strokeStyle = '#2e7d32';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(w / 2 - 14, -h / 2 + 8);
-      ctx.lineTo(w / 2 - 9, -h / 2 + 13);
-      ctx.lineTo(w / 2 - 3, -h / 2 + 3);
-      ctx.stroke();
-    }
-    if (node?.optional && unlocked) {
-      ctx.fillStyle = '#efe28a';
-      ctx.fillRect(-w / 2 - 4, -h / 2 - 6, 30, 10);
-      ctx.fillStyle = '#4a3320';
-      ctx.fillText('bonus', -w / 2 - 2, -h / 2 + 2);
-    }
-    // the pin
-    ctx.fillStyle = focus ? '#ffca28' : '#c62828';
-    ctx.beginPath();
-    ctx.arc(0, -h / 2 - 2, focus ? 5 : 3.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-
-    // Estrada's cap marks the focused node.
-    if (focus) {
-      ctx.fillStyle = '#d32f2f';
-      ctx.fillRect(x - 8, y - h / 2 - 22 + Math.round(Math.sin(this.frame / 12) * 2), 16, 7);
-      ctx.fillStyle = '#fff';
-      ctx.font = UI.fontSmall;
-      ctx.fillText('E', x - 2, y - h / 2 - 15 + Math.round(Math.sin(this.frame / 12) * 2));
-    }
+    // controls hint: top-right corner, clear of the sign and the info panel
+    ctx.font = UI.fontSmall;
+    textShadow(ctx, 'ENTER: enter set · ESC: title', VIEW_W - 8, 14, UI.textDim);
+    ctx.textAlign = 'left';
   }
 }

@@ -17,25 +17,37 @@ export const WORLD_H_TILES = 36;
 // sensors probe one tile ahead; faster than that tunnels through walls.
 // ---------------------------------------------------------------------------
 export const PHYS = {
+  // Speed philosophy: the view shows 40 tiles (vs the NES's 16), so px/frame
+  // numbers copied from the classics READ 2.5x slower here. Tune for
+  // screen-relative motion — snappy spin-up, brisk top speed (playtest:
+  // "really slow for walking... not the expected feeling of a mario like").
+  // Caps must stay well under TILE=16/frame (collision probes one tile).
   /** Ground acceleration per frame while below the applicable max. */
-  acc: 0.09,
+  acc: 0.14,
   /** Extra acceleration multiplier while `run` held. */
   runBoost: 1.6,
-  walkMax: 1.6,
-  runMax: 2.9,
+  walkMax: 2.1,
+  runMax: 3.8,
   /** Deceleration when skidding (holding the opposite direction). */
-  skid: 0.28,
+  skid: 0.36,
   /** Ground friction with no input. */
-  frc: 0.07,
-  airAcc: 0.09,
+  frc: 0.1,
+  airAcc: 0.13,
   /** Gravity while rising with jump held (variable jump height). */
   gravHold: 0.17,
   /** Gravity otherwise. */
   grav: 0.42,
   maxFall: 7,
-  /** Initial jump impulse (negative = up). Slightly stronger at full run. */
+  /** Initial jump impulse (negative = up). Slightly stronger at full run.
+   *  NOTE: full-held height is a LEVEL-GEOMETRY CONTRACT — 30 gated acts are
+   *  calibrated against it (a 4% trim broke w4a2's climb). Tune jump FEEL via
+   *  jumpCut below; touch this only alongside a full world re-tune. */
   jump: -6.7,
   jumpRunBonus: -0.6,
+  /** Releasing jump while rising clamps upward speed to this — the jump-CUT
+   *  that makes tap-vs-hold height control real (playtest: taps flew too
+   *  high without it, and the full jump was "slightly too high"). */
+  jumpCut: 2.6,
   /** Frames after leaving a ledge where a jump still works (coyote time). */
   coyote: 6,
   /** Frames a jump press is buffered before landing. */

@@ -103,6 +103,21 @@ describe('progress load/save', () => {
     expect(loadProgress()).toEqual(p);
   });
 
+  it('round-trips EVERY act number the union allows (a5-a8 were once eaten)', () => {
+    // Regression: LEVEL_ID_RE said a[1-4] after the campaign grew to 8 acts
+    // per world — every reload silently dropped clears for acts 5-8,
+    // castles included. Pin the union's edges through a full round trip.
+    let p = loadProgress();
+    for (const id of ['w1a7', 'w2a5', 'w2a8', 'w3a6', 'w3a8', 'w4a7'] as const) {
+      p = recordClear(p, id, best({ coins: 1, goldbars: 0, secrets: 0, deaths: 0 }));
+    }
+    saveProgress(p);
+    const back = loadProgress();
+    expect(Object.keys(back.cleared).sort()).toEqual(
+      ['w1a7', 'w2a5', 'w2a8', 'w3a6', 'w3a8', 'w4a7'],
+    );
+  });
+
   it('works with no localStorage at all (headless), silently', () => {
     delete (globalThis as { localStorage?: unknown }).localStorage;
     expect(() => saveProgress({ cleared: {}, seen: {} })).not.toThrow();

@@ -109,6 +109,9 @@ export class TitleScene implements SceneLike {
   render(ctx: CanvasRenderingContext2D): void {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     drawTitleArt(ctx, this.frame);
+    // The art layer may leave textAlign centered; the menu owns its state.
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
 
     if (this.panel === 'main') {
       const x = VIEW_W / 2 - 80;

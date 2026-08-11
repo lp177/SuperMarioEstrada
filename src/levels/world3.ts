@@ -36,7 +36,11 @@ import {
 //     dive-bombed inside the 600-frame silence window; walkers likewise
 //     cannot wander back to the spawn in time,
 //   - the mandatory route is flow-bot fare: steps <= 2, gaps <= 5, walls only
-//     where an 8-tile bot jump (or a spring, for humans) clears them.
+//     where an 8-tile bot jump (or a spring, for humans) clears them,
+//   - warp features (2026-08 re-tune) are OPTIONAL side content — the flow
+//     bot never presses down, so the mandatory route ignores them: w3a1 the
+//     High-Roller Lounge (10-coin vault), w3a6 the deep vault (16 coins +
+//     goldbar 3), w3a7 an honest shortcut past the entourage gauntlet.
 // ============================================================================
 
 // ---------------------------------------------------------------------------
@@ -71,12 +75,45 @@ function vaultCell(b: LevelBuilderLike, x: number, row: number, bar: number): Mo
   return { endX: x + 5, endRow: row };
 }
 
-/** Card-table flats: three felt-top oneway tables over a shallow service pit.
- *  Fall between tables and you land on the pit floor and walk out under them
- *  (generous, never lethal); the coins hover over the felt. */
+/** A warp-served COUNTING ROOM carved under the lane: press down on the
+ *  entry pipe, sink into a coin hoard (optionally one of the act's goldbars
+ *  or secrets — counts unchanged, just relocated), ride the far pipe back to
+ *  the lane ahead. Lane silhouette: 16 flat columns with two 2-tall pipes —
+ *  the exact shape the flow bot already clears in pipeField, so the
+ *  mandatory route never needs the warp. Room geometry keeps contract rule 7
+ *  honest by construction: 2 clear rows over every mouth, and the hop from
+ *  the room floor onto the departure mouth is a 2-row step. */
+function warpVault(
+  b: LevelBuilderLike,
+  x: number,
+  row: number,
+  opts: { coins: 10 | 16; goldbar?: number; secret?: number },
+): MotifEnd {
+  const roomTop = row + 3; // 3-row lid keeps the lane surface intact
+  const roomBot = b.heightTiles - 2; // floor is the map's last bedrock row
+  if (roomBot - roomTop < 5) {
+    throw new Error(`warpVault: lane row ${row} leaves no depth for the vault room`);
+  }
+  b.ground(x, x + 15, row);
+  b.room(x + 1, x + 12, roomTop, roomBot); // carve BEFORE laying vault pipes
+  b.warpPipe(x + 1, row - 2, 2, x + 3, roomBot - 1, 2); // down into the vault
+  b.warpPipe(x + 9, roomBot - 1, 2, x + 13, row - 2, 2); // back to the lane
+  b.coinRow(x + 2, x + 11, roomBot - 3); // 10 coins
+  if (opts.coins === 16) b.coinRow(x + 4, x + 9, roomBot - 2); // +6: the grand hoard
+  if (opts.goldbar !== undefined) b.goldbar(opts.goldbar, x + 6, roomBot);
+  if (opts.secret !== undefined) b.secret(opts.secret, x + 7, roomBot);
+  return { endX: x + 16, endRow: row };
+}
+
+/** Card-table flats: three felt-top oneway tables over the CARD SHREDDER —
+ *  a spike-carpeted service pit where the house shreds misdealt cards (and
+ *  misdealt heroes). Falling between tables costs a hit (rule 8: gaps carry
+ *  risk — the old safe floor was a nap); hop back out through the felt
+ *  (oneways) or over the low exit wall. Coins hover over the honest line. */
 function cardTables(b: LevelBuilderLike, x: number, row: number): MotifEnd {
   b.ground(x, x + 1, row);
-  b.ground(x + 2, x + 13, row + 3); // service-pit floor
+  b.ground(x + 2, x + 13, row + 3); // service-pit floor…
+  b.spikes(x + 2, x + 13, row + 2); // …under the shredder carpet
   b.oneway(x + 2, x + 4, row - 1);
   b.oneway(x + 6, x + 8, row - 2);
   b.oneway(x + 10, x + 12, row - 1);
@@ -146,9 +183,11 @@ function closeArena(b: LevelBuilderLike, c: MotifEnd): void {
 
 export const world3: LevelDef[] = [
   // -------------------------------------------------------------------------
-  // w3a1 — the marquee entrance: valet runway, first slot bank, chip goons.
+  // w3a1 — the marquee entrance: valet runway, first slot bank, chip goons,
+  // and the world's first warp: the comped High-Roller Lounge, a 10-coin
+  // counting room under the strip (teaches press-down-on-pipes early).
   // Easy: gaps 3-4, everything on one gentle lane at row 26.
-  // Coins: 16 + 5 + 3 + 6 + 9 + 3 rings = 42 entities + 8 qblock = 50.
+  // Coins: 16 + 5 + 3 + 6 + 9 + 10 vault + 3 rings = 52 entities + 8 qblock.
   // -------------------------------------------------------------------------
   {
     id: 'w3a1',
@@ -157,7 +196,7 @@ export const world3: LevelDef[] = [
     title: 'The Welcome Strip',
     excuse: 'No princess at check-in — but the desk comped me the Notary Suite, so I certified the minibar instead.',
     theme: 'casino',
-    width: 180,
+    width: 196,
     build(b) {
       let c = runway(b, 0, 26, { len: 12, coinRow: 22, rings: true }); // 16 coins
       b.start(2, 25);
@@ -171,7 +210,8 @@ export const world3: LevelDef[] = [
       c = gapJump(b, c.endX, c.endRow, { gap: 3 });
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
-      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // waitress plant, 75 tiles out
+      c = warpVault(b, c.endX, c.endRow, { coins: 10 }); // the comped High-Roller Lounge
+      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // waitress plant, 91 tiles out
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'lobbyist'] });
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
@@ -277,7 +317,8 @@ export const world3: LevelDef[] = [
 
   // -------------------------------------------------------------------------
   // w3a4 — OPTIONAL low road: the poker floor. Card-table oneways over
-  // service pits, back-to-back chipstack gauntlets. Two goldbars sit in the
+  // spike-carpeted CARD SHREDDER pits (rule 8: falling between tables must
+  // carry risk), back-to-back chipstack gauntlets. Two goldbars sit in the
   // open (perches); three hide (two vault cells, one spring-only high shelf).
   // Coins: 11 + 9 + 3 + 9 + 6 + 6 rings = 44 entities + 1 qblock = 45.
   // -------------------------------------------------------------------------
@@ -363,10 +404,12 @@ export const world3: LevelDef[] = [
   },
 
   // -------------------------------------------------------------------------
-  // w3a6 — OPTIONAL spur: the vault. Brick everywhere, three goldbars locked
-  // in brick-lidded cells, a teller counter to smash (Certified) or hop, and
-  // the world's second (last) Immunity badge. Coins run rich.
-  // Coins: 11 + 9 + 3 + 6 + 3 + 6 + 13 rings/rows = 51 with 9 qblock coins.
+  // w3a6 — OPTIONAL spur: the vault. Brick everywhere, two goldbars locked in
+  // brick-lidded cells and a third in the DEEP VAULT — a warp-served counting
+  // room under the lane, 16 coins deep (the act is named The Vault; now there
+  // is one). A teller counter to smash (Certified) or hop, and the world's
+  // second (last) Immunity badge. Coins run rich.
+  // Coins: 11 + 3 + 13 + 6 + 3 + 16 vault + 3 rings = 55 + 9 qblock = 64.
   // -------------------------------------------------------------------------
   {
     id: 'w3a6',
@@ -375,7 +418,7 @@ export const world3: LevelDef[] = [
     title: 'The Vault',
     excuse: 'Opening the vault mid-rescue would trigger an audit. A very stable genius waits for the fiscal year to close.',
     theme: 'casino',
-    width: 200,
+    width: 212,
     build(b) {
       let c = runway(b, 0, 26, { len: 10, coinRow: 22, rings: true }); // 11 coins
       b.start(2, 25);
@@ -396,22 +439,26 @@ export const world3: LevelDef[] = [
       c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
       c = brickCache(b, c.endX, c.endRow); // 3 coins behind the teller wall
-      c = vaultCell(b, c.endX, c.endRow, 3); // vault bar 3
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 });
-      // Long approach: the bot arrives slow out of the slot cluster and needs
-      // the full runup to carry a 5-gap.
-      c = gapJump(b, c.endX, c.endRow, { gap: 5, approach: 6 });
+      c = warpVault(b, c.endX, c.endRow, { coins: 16, goldbar: 3 }); // THE deep vault
+      // Flat, forgiving terrain must follow the vault pipes: a sprint-carried
+      // bot wall-jumps a 2-tall pipe into a ~21-tile flight, and it has to
+      // land on something standable (perch lane + gallery ground/brick tops).
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // easy bar 2
       c = brickGallery(b, c.endX, c.endRow, { len: 10 }); // 3 coin qb, all coins
-      closeOut(b, c); // pad 11: 6 ring coins
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 });
+      // Long approach: the bot arrives slow out of the pocket and needs the
+      // full runup to carry a 5-gap.
+      c = gapJump(b, c.endX, c.endRow, { gap: 5, approach: 6 });
+      closeOut(b, c); // pad 9: 3 ring coins
     },
   },
 
   // -------------------------------------------------------------------------
   // w3a7 — the neon midway: everything the peninsula sells at once. Bounce
   // chains, drone escorts, a oneway marquee climb, the longest act in the
-  // world. Gaps run at 5; this is the pre-castle exam.
-  // Coins: 11 + 9 + 3 + 6 + 9 + 3 + 13 + 7 + 3 rings = 64 + 2 qblock = 66.
+  // world — plus an honest warp shortcut past the entourage gauntlet for
+  // players who press down on pipes. Gaps run at 5; the pre-castle exam.
+  // Coins: 11 + 9 + 3 + 6 + 9 + 3 + 13 + 7 = 61 entities + 2 qblock = 63.
   // -------------------------------------------------------------------------
   {
     id: 'w3a7',
@@ -440,10 +487,16 @@ export const world3: LevelDef[] = [
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
       c = springboardWall(b, c.endX, c.endRow, { wallH: 5 }); // up to 17
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      // HONEST SHORTCUT (warp): press down here to skip the collapsing carpet
+      // and the full entourage, surfacing on the gauntlet's far shoulder.
+      // Walkers keep the 13-coin row; explorers keep their skin.
+      c = runway(b, c.endX, c.endRow, { len: 4 });
+      const skipX = c.endX - 3; // entry pipe on that runway's middle columns
       c = crumbleBridge(b, c.endX, c.endRow, { len: 6 });
       const g3 = c.endX; // the full entourage, 116+ tiles out
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['paparazzo', 'chipstack', 'lobbyist'] });
       b.coinRow(g3 + 1, g3 + 13, c.endRow - 5); // 13 coins
+      b.warpPipe(skipX, c.endRow - 2, 2, g3 + 13, c.endRow - 2, 2); // the skip
       c = coinArc(b, c.endX, c.endRow, { gap: 5 }); // 7 coins
       const climbX = c.endX;
       c = onewayClimb(b, c.endX, c.endRow, { rise: 2 }); // marquee ledges, up to 15
@@ -456,7 +509,7 @@ export const world3: LevelDef[] = [
       c = gapJump(b, c.endX, c.endRow, { gap: 5, approach: 2, landing: 2 });
       c = secretPocket(b, c.endX, c.endRow, { index: 2 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
-      closeOut(b, c); // pad 7: 3 ring coins
+      closeOut(b, c); // pad 3: no ring room (the shortcut runway took it)
     },
   },
 

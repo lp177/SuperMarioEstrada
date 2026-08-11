@@ -10,7 +10,11 @@
 import type { ActBest, CutsceneId, LevelId, ProgressData } from '../core/types.ts';
 import { STORAGE_KEYS } from '../core/constants.ts';
 
-const LEVEL_ID_RE = /^w[1-4]a[1-4]$/;
+// Must accept EVERY id the ActNo union allows (a1..a8) — this regex once said
+// a[1-4] after the campaign grew to 8 acts/world and silently ATE saved clears
+// for acts 5-8 (castles included) on every load. Data-loss class: keep in
+// lockstep with ActNo, and the round-trip test below the union's edges.
+const LEVEL_ID_RE = /^w[1-4]a[1-8]$/;
 
 /** Exhaustive over CutsceneId — a new cutscene does not compile until it is
  *  listed here, so saved `seen` flags can be validated against the union. */

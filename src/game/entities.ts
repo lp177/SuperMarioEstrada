@@ -325,7 +325,9 @@ type LawyerPhase = 'hidden' | 'rising' | 'up' | 'sinking';
 class Lawyer extends BaseEntity {
   private lphase: LawyerPhase = 'hidden';
   private phaseT = 0;
-  private readonly baseY: number;
+  /** Pipe-mouth anchor (world px, the rim line): PUBLIC readonly so the
+   *  painter can root the stem at the rim and clip the sink behind it. */
+  readonly baseY: number;
   constructor(x: number, y: number) {
     super('lawyer', x, y, 6, 10);
     this.baseY = y;

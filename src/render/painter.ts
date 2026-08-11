@@ -498,24 +498,102 @@ function turtleBase(ctx: Ctx, e: EntityLike, shellFill: string): void {
   ctx.fillRect(8, -4, 2, 2);
 }
 
-/** Plant stalk rising from the pipe mouth. */
-function plantStalk(ctx: Ctx, color: string): void {
-  ctx.fillStyle = color;
-  ctx.fillRect(-2, 2, 4, 12);
+/** Carnivorous-plant-parody chassis shared by every lawyer skin.
+ *  The entity's (x,y) is the HEAD center riding the rise/sink cycle and
+ *  Lawyer.baseY is the pipe-rim line, so the plant can be ROOTED: a clip
+ *  forbids every pixel below the rim (sinking disappears INTO the pipe,
+ *  classic style) and a segmented stem runs from the head through the rim.
+ *  The head is drawn slightly low while emerging (fast catch-up) so it is
+ *  fully swallowed at rest, then rides the (frozen) hurt box once out.
+ *  Returns the local head-center y and the chomp state for the theme tell. */
+interface PlantLook {
+  head: string;
+  headDk: string;
+  stem: string;
+  stemBand: string;
 }
 
-/** The chomp cycle shared by plant heads (open jaw / pressed shut). */
-function plantChomp(ctx: Ctx, e: EntityLike): void {
-  if (Math.floor(e.animT / 14) % 2 === 0) {
-    tri(ctx, -5, -4, -1, -4, -3, -1, '#f2efe4');
-    tri(ctx, 1, -4, 5, -4, 3, -1, '#f2efe4');
-    ctx.fillStyle = '#7a1f1f';
-    ctx.fillRect(-4, -3, 8, 2);
-  } else {
-    ctx.fillStyle = '#f2efe4';
-    ctx.fillRect(-5, -4, 10, 2);
+function plantChassis(ctx: Ctx, e: EntityLike, look: PlantLook): { cy: number; open: boolean; out: boolean } {
+  // baseY probe: Lawyer exposes it readonly; fall back to "fully out".
+  const baseY = (e as unknown as { baseY?: number }).baseY ?? e.y + 28;
+  const rim = baseY - e.y; // pipe rim in local coords (>= 0 while emerged)
+  ctx.beginPath();
+  ctx.rect(-26, -64, 52, 64 + rim); // NOTHING below the rim, ever
+  ctx.clip();
+  // rest position is DEEP enough that hat/tells sit below the rim too; the
+  // head pops out fast early, then rides the (frozen) hurt box once out
+  const cy = Math.max(0, 12 - rim * 1.5);
+  const open = Math.floor(e.animT / 14) % 2 === 0;
+  const out = rim > 2;
+  // segmented stem, rooted through the rim (the clip trims the rest)
+  ctx.fillStyle = look.stem;
+  ctx.fillRect(-3, cy, 6, rim - cy + 3);
+  ctx.fillStyle = look.stemBand;
+  for (let yy = cy + 5; yy < rim + 3; yy += 5) ctx.fillRect(-3, yy, 6, 2);
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(-3, cy + 3);
+  ctx.lineTo(-3, rim + 3);
+  ctx.moveTo(3, cy + 3);
+  ctx.lineTo(3, rim + 3);
+  ctx.stroke();
+  // leaf collar where the head meets the stem: chunky, rounded
+  for (const sgn of [-1, 1] as const) {
+    ctx.save();
+    ctx.translate(sgn * 7, cy + 9);
+    ctx.rotate(sgn * 0.45);
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2.5, 0, 0, Math.PI * 2);
+    ctx.fillStyle = look.head;
+    ctx.fill();
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.fillStyle = look.headDk; // center vein
+    ctx.fillRect(-3, -0.6, 6, 1.2);
+    ctx.restore();
   }
+  // the head: big dome, shaded crescent on the off side
+  disc(ctx, 0, cy, 8.5, look.headDk, OUT);
+  disc(ctx, 1.3, cy - 0.7, 7.2, look.head);
+  if (open) {
+    // gaping maw: wide, forward, packed with fangs — a MOUTH, not an eye
+    ctx.beginPath();
+    ctx.ellipse(1.8, cy + 1.5, 6.9, 4.9, 0, 0, Math.PI * 2);
+    ctx.fillStyle = '#5c1414';
+    ctx.fill();
+    tri(ctx, -4.2, cy - 2.6, -1, cy - 2.6, -2.6, cy + 1.4, '#f2efe4'); // top fangs
+    tri(ctx, 0, cy - 3, 3.2, cy - 3, 1.6, cy + 1.6, '#f2efe4');
+    tri(ctx, 4.2, cy - 2.8, 7.2, cy - 2, 5.6, cy + 1.4, '#f2efe4');
+    tri(ctx, -3.2, cy + 5.6, -0.2, cy + 5.9, -1.7, cy + 2.2, '#f2efe4'); // bottom fangs
+    tri(ctx, 1.4, cy + 6, 4.4, cy + 5.8, 2.9, cy + 2.4, '#f2efe4');
+    ctx.beginPath(); // fat lips around it all
+    ctx.ellipse(1.8, cy + 1.5, 7.6, 5.6, 0, 0, Math.PI * 2);
+    ctx.strokeStyle = '#f4f0e6';
+    ctx.lineWidth = 2.6;
+    ctx.stroke();
+  } else {
+    // lips pressed shut: the fat pout, two fang tips still poking out
+    ctx.fillStyle = '#f4f0e6';
+    ctx.fillRect(-5.5, cy + 0.5, 13, 3.4);
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-5.5, cy + 0.5, 13, 3.4);
+    ctx.fillStyle = OUT;
+    ctx.fillRect(-4.5, cy + 2, 11, 0.9);
+    tri(ctx, -2.6, cy + 3.9, -0.6, cy + 3.9, -1.6, cy + 6, '#f2efe4');
+    tri(ctx, 2.4, cy + 3.9, 4.4, cy + 3.9, 3.4, cy + 6, '#f2efe4');
+  }
+  return { cy, open, out };
 }
+
+const PLANT_LOOK: Record<ThemeId, PlantLook> = {
+  meadow: { head: '#3d8f3d', headDk: '#2c6b2c', stem: '#2f6f2f', stemBand: '#4da24d' },
+  sewer: { head: '#3d8f3d', headDk: '#2c6b2c', stem: '#2f6f2f', stemBand: '#4da24d' },
+  casino: { head: '#3d8f3d', headDk: '#2c6b2c', stem: '#2f6f2f', stemBand: '#4da24d' },
+  castle: { head: '#57713a', headDk: '#42582b', stem: '#3f5429', stemBand: '#5c7a3f' },
+};
 
 /** Drone rotor pair + hubs (blur width off the free-running clock). */
 function droneRotors(ctx: Ctx, e: EntityLike): void {
@@ -720,82 +798,74 @@ const ENEMY_SKIN: Record<EnemyKind, Record<ThemeId, SkinDraw>> = {
   },
 
   lawyer: {
-    // The makeup artist: powder-puff head, dabbing — TELL: HELLO tag.
+    // Piranha-parody FIRST; the makeup artist — TELL: powder-puff in the
+    // jaws, a beauty mark on the lip, tiny artistic beret.
     meadow: (ctx, e) => {
-      plantStalk(ctx, '#2f6f2f');
-      orect(ctx, -11, 8, 7, 5, '#e8b4c8'); // compact-case leaf
-      orect(ctx, 4, 8, 7, 5, '#c9ccd8'); // hand-mirror leaf
-      ctx.fillStyle = '#f2f2f2';
-      ctx.fillRect(5, 9, 5, 3);
-      const dab = Math.floor(e.animT / 14) % 2 === 0 ? 2 : 0;
-      disc(ctx, 0, -5 + dab, 7, '#ff9bb0', OUT); // the puff
-      disc(ctx, -3, -8 + dab, 2, '#ffc4d4');
-      disc(ctx, 3, -7 + dab, 2, '#ffc4d4');
-      if (dab === 2) { // powder poof
-        disc(ctx, -6, -13, 1.5, '#f5f0e6');
-        disc(ctx, 0, -15, 1.5, '#f5f0e6');
-        disc(ctx, 6, -13, 1.5, '#f5f0e6');
+      const { cy, open, out } = plantChassis(ctx, e, PLANT_LOOK.meadow);
+      if (!out) return;
+      if (open) {
+        disc(ctx, 2, cy + 3.6, 2.2, '#ff9bb0', OUT); // the puff at the bottom lip
+        disc(ctx, 1.3, cy + 3, 0.7, '#ffc4d4');
+        disc(ctx, 2.9, cy + 4.2, 0.7, '#ffc4d4');
       }
-      tellTag(ctx, -6, 0, 12, 'M.U.A.');
+      disc(ctx, 7.6, cy + 5.6, 1, OUT); // beauty mark on the lip
+      ctx.save(); // the beret, artistic tilt
+      ctx.translate(-3, cy - 8);
+      ctx.rotate(-0.15);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 5, 2.1, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#2a2433';
+      ctx.fill();
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = OUT;
+      ctx.fillRect(-0.5, -3.2, 1.2, 2); // beret nub
+      ctx.restore();
     },
-    // THE lawyer: pinstripe sleeve, briefcase jaws — TELL: sleeve zipper.
+    // THE lawyer — TELL: a little tie knotted on the stem; barks OBJECTION!
     sewer: (ctx, e) => {
-      plantStalk(ctx, '#28304f');
-      ctx.fillStyle = 'rgba(255,255,255,0.45)'; // pinstripes
-      ctx.fillRect(-1, 3, 1, 11);
-      ctx.fillRect(1, 3, 1, 11);
-      orect(ctx, -11, 7, 7, 6, '#8a5a2b'); // filing leaves
-      orect(ctx, 4, 7, 7, 6, '#8a5a2b');
-      if (Math.floor(e.animT / 14) % 2 === 0) { // jaws open
-        orect(ctx, -7, -13, 14, 6, '#6f4626');
-        orect(ctx, -7, -3, 14, 6, '#8a5a2b');
-        ctx.fillStyle = '#f2efe4'; // discovery documents
-        ctx.fillRect(-5, -6, 10, 3);
-        txt(ctx, 'OBJECTION!', 0, -16, 3, '#c22e2e');
-      } else {
-        orect(ctx, -7, -9, 14, 9, '#8a5a2b'); // case pressed shut
-        ctx.fillStyle = '#ffd34e';
-        ctx.fillRect(-1, -6, 3, 3); // clasp
-      }
-      tellZipper(ctx, -1.5, 4, 7);
-    },
-    // The waitress plant, serving subpoenas — TELL: HELLO 'DEB' tag.
-    casino: (ctx, e) => {
-      plantStalk(ctx, '#2f6f2f');
-      orect(ctx, 4, 8, 7, 5, '#2f6f2f'); // plain leaf
-      disc(ctx, -8, 10, 4.5, '#c9ccd8', OUT); // serving-tray leaf
-      ctx.fillStyle = '#f5f0e6'; // the subpoena
-      ctx.fillRect(-10, 4, 5, 5);
-      disc(ctx, -7.5, 6, 1, '#c22e2e'); // wax seal
-      disc(ctx, 0, -4, 8, '#3d8f3d', OUT);
-      plantChomp(ctx, e);
-      ctx.fillStyle = '#f5f0e6'; // doily cap
-      ctx.fillRect(-5, -12, 10, 2);
-      disc(ctx, 5, -11, 1.8, '#c22e2e'); // bow
-      tellTag(ctx, 3, -1, 10, 'DEB');
-    },
-    // The general plant: peaked cap + medals — TELL: chin under the seam.
-    castle: (ctx, e) => {
-      plantStalk(ctx, '#57713a');
-      orect(ctx, -11, 7, 7, 6, '#57713a'); // epaulette leaves
-      orect(ctx, 4, 7, 7, 6, '#57713a');
-      ctx.fillStyle = '#ffd34e'; // gold fringe
-      ctx.fillRect(-10, 12, 5, 1);
-      ctx.fillRect(5, 12, 5, 1);
-      disc(ctx, 0, -4, 8, '#57713a', OUT);
-      plantChomp(ctx, e);
-      ctx.fillStyle = '#3a5a2a'; // peaked cap
-      ctx.fillRect(-6, -14, 12, 4);
-      ctx.fillStyle = OUT;
-      ctx.fillRect(-7, -10, 14, 1.5); // brim
+      const { cy, open, out } = plantChassis(ctx, e, PLANT_LOOK.sewer);
+      if (!out) return;
       ctx.fillStyle = '#c22e2e';
-      ctx.fillRect(-1, -13, 2, 2); // star pin
-      disc(ctx, -2, 6, 1.2, '#ffd34e'); // medals on the stalk
-      disc(ctx, 1, 8, 1.2, '#c9ccd8');
-      ctx.fillStyle = '#f2b98a'; // TELL: human chin, jutting (family trait)
-      ctx.fillRect(-2, 3, 6, 2);
-      ctx.fillStyle = OUT;
-      ctx.fillRect(-4, 2.5, 9, 1); // costume seam
+      ctx.fillRect(-2, cy + 8, 4, 2.5); // the knot
+      tri(ctx, -2.6, cy + 10.5, 2.6, cy + 10.5, 0, cy + 18, '#c22e2e', OUT);
+      if (open) txt(ctx, 'OBJECTION!', 0, cy - 15, 4, '#c22e2e');
+    },
+    // The waitress plant — TELL: bow tie + a served subpoena on a tray leaf.
+    casino: (ctx, e) => {
+      const { cy, out } = plantChassis(ctx, e, PLANT_LOOK.casino);
+      if (!out) return;
+      tri(ctx, -0.8, cy + 9, -4.6, cy + 7, -4.6, cy + 11, '#c22e2e', OUT); // bow
+      tri(ctx, 0.8, cy + 9, 4.6, cy + 7, 4.6, cy + 11, '#c22e2e', OUT);
+      disc(ctx, 0, cy + 9, 1.4, '#7a1f1f');
+      disc(ctx, -12, cy + 12, 4.4, '#c9ccd8', OUT); // tray held by the leaf
+      ctx.fillStyle = '#f5f0e6'; // the subpoena, served chilled
+      ctx.fillRect(-14.4, cy + 6, 5, 5.5);
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 1;
+      ctx.strokeRect(-14.4, cy + 6, 5, 5.5);
+      disc(ctx, -11.8, cy + 8.6, 1, '#c22e2e'); // wax seal
+    },
+    // The general plant — TELL: starred beret + medal pips on the stem.
+    castle: (ctx, e) => {
+      const { cy, out } = plantChassis(ctx, e, PLANT_LOOK.castle);
+      if (!out) return;
+      ctx.save();
+      ctx.translate(-2.5, cy - 8);
+      ctx.rotate(-0.12);
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 5.5, 2.2, 0, 0, Math.PI * 2);
+      ctx.fillStyle = '#3a5a2a';
+      ctx.fill();
+      ctx.strokeStyle = OUT;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = '#c22e2e';
+      ctx.fillRect(-1, -1.2, 2, 1.8); // star pin
+      ctx.restore();
+      disc(ctx, -1.6, cy + 14, 1.3, '#ffd34e', OUT); // medal pips
+      disc(ctx, 1.6, cy + 17.5, 1.3, '#c9ccd8', OUT);
     },
   },
 
@@ -1255,131 +1325,393 @@ export function drawEntities(ctx: Ctx, level: LevelLike, cam: CameraState, frame
 
 // ---------------------------------------------------------------------------
 // Player — SUPER MARIO ESTRADA, the hero the kingdom paid for (literally).
+//
+// CARICATURE FIRST: the in-level sprite is the cutscene Estrada shrunk to
+// chibi (big head ~55% of the height — recognizability lives in the head).
+// The VISUAL exceeds the FROZEN hitbox (classic practice): feet stay anchored
+// at the box bottom, centered on x. Identity kit at EVERY size: red cap with
+// the white 'E' disc + brim toward facing, pencil moustache, smug half-lid
+// eye, big nose, slicked sideburn, red shirt sleeves, blue bib with gold
+// buttons, white gloves, brown shoes, notary stamp at the belt.
+// Palette sampled from the cutscene cast (cutsceneArt.ts P.*) so one glance
+// links him to the story. The 2px ink outline is a silhouette stamp: the
+// whole body is drawn 8x in ink at 1-2px offsets, then once in color.
 // ---------------------------------------------------------------------------
 
-interface PlayerCosmetics {
+interface EstradaPal {
   cap: string;
+  capDark: string;
   shirt: string;
-  overalls: string;
-  skin: string;
-  boot: string;
-  medal: string;
+  shirtDark: string;
+  bib: string;
+  bibDark: string;
+  glove: string;
+  shoe: string;
+  button: string;
+  /** The letter on the white cap disc. */
+  discE: string;
 }
 
-const PLAYER_PAL: Record<PlayerSize, PlayerCosmetics> = {
+// Shared caricature tones (cutsceneArt.ts: P.skin / INK-adjacent hair).
+const E_SKIN = '#f2c090';
+const E_SKIN_DK = '#d99e66';
+const E_NOSE = '#e8a96e';
+const E_HAIR = '#33221a';
+const E_TASH = '#241812';
+const E_STAMP = '#7a2020';
+
+const PLAYER_PAL: Record<PlayerSize, EstradaPal> = {
   small: {
-    cap: '#d8382a', shirt: '#d8382a', overalls: '#2a4fd8',
-    skin: '#f2b98a', boot: '#5a3a1e', medal: '#ffd34e',
+    cap: '#d8302f', capDark: '#a32222',
+    shirt: '#d8302f', shirtDark: '#a32222',
+    bib: '#2b4fa8', bibDark: '#1e3a7d',
+    glove: '#f4f0e6', shoe: '#6b3d1e',
+    button: '#f6c94b', discE: '#d8302f',
   },
   certified: {
-    cap: '#d8382a', shirt: '#d8382a', overalls: '#2a4fd8',
-    skin: '#f2b98a', boot: '#5a3a1e', medal: '#ffd34e',
+    cap: '#d8302f', capDark: '#a32222',
+    shirt: '#d8302f', shirtDark: '#a32222',
+    bib: '#2b4fa8', bibDark: '#1e3a7d',
+    glove: '#f4f0e6', shoe: '#6b3d1e',
+    button: '#f6c94b', discE: '#d8302f',
   },
   goldpen: {
-    // palette swap: white-and-gold, the outfit of a man with nothing to hide
-    cap: '#f5f0e6', shirt: '#f5f0e6', overalls: '#e0aa2f',
-    skin: '#f2b98a', boot: '#8a6a1e', medal: '#d8382a',
+    // white-and-gold palette swap: the outfit of a man with nothing to hide.
+    // The cap stays RED — the cap IS the identity.
+    cap: '#d8302f', capDark: '#a32222',
+    shirt: '#f4f0e6', shirtDark: '#cfc4ab',
+    bib: '#e0aa2f', bibDark: '#a87c1e',
+    glove: '#ffffff', shoe: '#8a6a1e',
+    button: '#d8302f', discE: '#d8302f',
   },
 };
 
-/** Landing-squash memory, keyed per player instance; render-side only. */
-const squashState = new WeakMap<PlayerLike, { prevVy: number; squashT: number }>();
+type PoseKind = 'idle' | 'walk' | 'skid' | 'jump' | 'fall' | 'duck' | 'dead';
 
-/** Body drawn facing +x with FEET at y=0, head upward (negative y). */
-function drawEstradaBody(ctx: Ctx, pal: PlayerCosmetics, big: boolean, walk: number, airborne: boolean): void {
-  const armsUp = airborne;
-  if (big) {
-    // boots
-    ctx.fillStyle = pal.boot;
-    ctx.fillRect(-6 + walk, -3, 5, 3);
-    ctx.fillRect(1 - walk, -3, 5, 3);
-    // overalls + straps
-    orect(ctx, -6, -13, 12, 10, pal.overalls);
-    ctx.fillStyle = pal.overalls;
-    ctx.fillRect(-5, -16, 2, 4);
-    ctx.fillRect(3, -16, 2, 4);
-    ctx.fillStyle = pal.medal;
-    ctx.fillRect(-4, -12, 2, 2); // button
-    ctx.fillRect(2, -12, 2, 2);
-    // notary stamp holstered at the belt
-    ctx.fillStyle = '#7a2020';
-    ctx.fillRect(-8, -12, 3, 4);
-    ctx.fillStyle = '#f5f0e6';
-    ctx.fillRect(-8, -12, 3, 1);
-    // shirt torso
-    ctx.fillStyle = pal.shirt;
-    ctx.fillRect(-6, -17, 12, 4);
-    // arms
-    ctx.fillStyle = pal.shirt;
-    if (armsUp) {
-      ctx.fillRect(-9, -22, 3, 7);
-      ctx.fillRect(6, -22, 3, 7);
-      ctx.fillStyle = pal.skin;
-      ctx.fillRect(-9, -24, 3, 2); // hands in the air (like he just doesn't care)
-      ctx.fillRect(6, -24, 3, 2);
-    } else {
-      ctx.fillRect(-8, -16 + walk, 3, 6);
-      ctx.fillRect(5, -16 - walk, 3, 6);
-      ctx.fillStyle = pal.skin;
-      ctx.fillRect(-8, -10 + walk, 3, 2);
-      ctx.fillRect(5, -10 - walk, 3, 2);
-    }
-    // head
-    ctx.fillStyle = pal.skin;
-    ctx.fillRect(-5, -25, 10, 8);
-    ctx.fillStyle = '#e0a070';
-    ctx.fillRect(4, -21, 3, 3); // proud nose
-    ctx.fillStyle = '#ffffff'; // smug half-lid eye: white, low pupil…
-    ctx.fillRect(1, -23, 3, 2);
-    ctx.fillStyle = OUT;
-    ctx.fillRect(2, -22.2, 2, 1.2);
-    ctx.fillRect(1, -23, 3, 1); // …and the lid at half mast
-    ctx.fillStyle = '#3a2a1e';
-    ctx.fillRect(-5, -24, 2, 4); // slicked sideburn under the cap
-    ctx.fillRect(-5, -20.5, 3, 1); // its little forward hook
-    ctx.fillRect(0, -18.5, 5, 1); // the pencil moustache (thinner = smugger)
-    ctx.fillRect(4.5, -19.2, 1, 1); // dapper upturn
-    // cap + 'E' medallion
-    orect(ctx, -6, -29, 12, 5, pal.cap);
-    ctx.fillStyle = pal.cap;
-    ctx.fillRect(3, -25.5, 5, 2); // brim
-    disc(ctx, 0, -26.5, 2.5, pal.medal);
-    txt(ctx, 'E', 0, -26.5, 4, '#8a2020');
+interface Pose {
+  kind: PoseKind;
+  /** Front-leg spread offset in px (-2..2); back leg mirrors it. */
+  leg: number;
+  /** Arm-swing offset in px (front arm counter-swings the front leg). */
+  arm: number;
+  /** Idle breathe: 0|1, the head group settles 1px on the exhale. */
+  breathe: number;
+}
+
+/** Ink-overridable fill helpers: the silhouette pass paints every shape OUT. */
+function inkable(ctx: Ctx, ink: boolean): {
+  R: (x: number, y: number, w: number, h: number, c: string) => void;
+  D: (x: number, y: number, r: number, c: string) => void;
+} {
+  return {
+    R: (x, y, w, h, c) => {
+      ctx.fillStyle = ink ? OUT : c;
+      ctx.fillRect(x, y, w, h);
+    },
+    D: (x, y, r, c) => {
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fillStyle = ink ? OUT : c;
+      ctx.fill();
+    },
+  };
+}
+
+/** Hand-pixeled 'E' (crisper than font glyphs at this scale). */
+function markE(ctx: Ctx, ink: boolean, x: number, y: number, s: number, c: string): void {
+  if (ink) return; // the disc itself already carries the silhouette
+  ctx.fillStyle = c;
+  ctx.fillRect(x - 2.0 * s, y - 2.6 * s, 1.4 * s, 5.2 * s); // spine
+  ctx.fillRect(x - 2.0 * s, y - 2.6 * s, 4.0 * s, 1.2 * s); // top bar
+  ctx.fillRect(x - 2.0 * s, y - 0.6 * s, 3.2 * s, 1.2 * s); // mid bar
+  ctx.fillRect(x - 2.0 * s, y + 1.4 * s, 4.0 * s, 1.2 * s); // bottom bar
+}
+
+/** KO'd X-eye (ink-colored either way, so no override needed). */
+function xEye(ctx: Ctx, x: number, y: number, r: number): void {
+  ctx.strokeStyle = OUT;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(x - r, y - r);
+  ctx.lineTo(x + r, y + r);
+  ctx.moveTo(x + r, y - r);
+  ctx.lineTo(x - r, y + r);
+  ctx.stroke();
+}
+
+/** Small Estrada, facing +x, feet at y=0. ~20px tall, head+cap ~55% of it. */
+function estradaSmall(ctx: Ctx, pal: EstradaPal, pose: Pose, ink: boolean): void {
+  const { R, D } = inkable(ctx, ink);
+  const air = pose.kind === 'jump' || pose.kind === 'fall';
+  const out = pose.kind === 'fall' || pose.kind === 'skid'; // arms out for balance
+  const u = pose.breathe; // head settles 1px on the exhale
+
+  // back arm (behind the torso)
+  if (pose.kind === 'jump') {
+    R(-8.5, -17, 2.5, 6, pal.shirtDark);
+    D(-7.2, -18, 1.9, pal.glove);
+  } else if (out) {
+    R(-9, -8.5, 3.5, 2.5, pal.shirtDark);
+    D(-9.2, -7.2, 1.9, pal.glove);
   } else {
-    // small: same grifter, less of him
-    ctx.fillStyle = pal.boot;
-    ctx.fillRect(-5 + walk, -2, 4, 2);
-    ctx.fillRect(1 - walk, -2, 4, 2);
-    orect(ctx, -5, -7, 10, 5, pal.overalls);
-    ctx.fillStyle = '#7a2020';
-    ctx.fillRect(-7, -7, 2, 3); // stamp at the belt, always
-    ctx.fillStyle = pal.shirt; // stub arms
-    if (armsUp) {
-      ctx.fillRect(-7, -11, 2, 4);
-      ctx.fillRect(5, -11, 2, 4);
-    } else {
-      ctx.fillRect(-7, -7 + walk, 2, 3);
-      ctx.fillRect(5, -7 - walk, 2, 3);
-    }
-    ctx.fillStyle = pal.skin;
-    ctx.fillRect(-5, -12, 10, 6);
-    ctx.fillStyle = '#e0a070';
-    ctx.fillRect(4, -10, 2, 2);
-    ctx.fillStyle = '#ffffff'; // the same smug half-lid, fun-size
-    ctx.fillRect(1, -11, 3, 2);
-    ctx.fillStyle = OUT;
-    ctx.fillRect(2, -10.4, 2, 1.2);
-    ctx.fillRect(1, -11, 3, 0.8);
-    ctx.fillStyle = '#3a2a1e';
-    ctx.fillRect(-5, -12, 1.5, 3); // sideburn
-    ctx.fillRect(0, -8, 4, 1);
-    orect(ctx, -6, -15, 12, 4, pal.cap);
-    ctx.fillStyle = pal.cap;
-    ctx.fillRect(3, -12, 4, 2);
-    disc(ctx, 0, -13, 2, pal.medal);
-    txt(ctx, 'E', 0, -13, 3, '#8a2020');
+    R(-7, -8 + pose.arm, 2.5, 4, pal.shirtDark);
+    D(-5.8, -3.5 + pose.arm, 1.8, pal.glove);
+  }
+
+  // torso: blue bib (shirt shows on the sleeves), gold buttons, belt stamp
+  R(-5, -7, 10, 5, pal.bib);
+  R(-5, -7, 2, 5, pal.bibDark); // shade away from facing
+  R(-3, -6.2, 1.6, 1.6, pal.button);
+  R(1.4, -6.2, 1.6, 1.6, pal.button);
+  R(-7, -7.5, 2, 3, E_STAMP); // notary stamp at the back hip, always
+  R(-7, -7.5, 2, 0.9, pal.glove);
+
+  // legs / shoes
+  if (pose.kind === 'jump') {
+    R(-4.5, -4, 4.5, 2.5, pal.shoe); // tucked
+    R(0.5, -4, 4.5, 2.5, pal.shoe);
+  } else if (pose.kind === 'fall') {
+    R(-5.5, -3, 4.5, 2.5, pal.shoe); // dangling
+    R(1.5, -2.5, 4.5, 2.5, pal.shoe);
+  } else {
+    R(-6.5 - pose.leg, -2, 5.5, 2, pal.shoe);
+    R(1 + pose.leg, -2, 5.5, 2, pal.shoe);
+  }
+
+  // head — THE caricature: most of the sprite
+  R(-7, -15 + u, 14, 8, E_SKIN);
+  R(-7, -15 + u, 2, 8, E_SKIN_DK); // shade
+  R(-7, -15 + u, 2, 5, E_HAIR); // slicked sideburn…
+  R(-7, -11 + u, 3.5, 1.2, E_HAIR); // …with its forward hook
+  D(8, -10.5 + u, 2.6, E_NOSE); // the nose, entering the room first
+  R(2.5, -8.4 + u, 6, 1.6, E_TASH); // pencil moustache
+  R(8, -9.3 + u, 1.3, 1.2, E_TASH); // dapper upturn
+  // smug half-lid eye: big white, thin lid line, pupil half-hidden under it
+  R(1.8, -13.6 + u, 4, 3.2, '#ffffff');
+  R(1.8, -13.6 + u, 4, 0.8, OUT); // the lid, at half mast
+  R(3.5, -12.8 + u, 1.6, 1.4, OUT); // low pupil peeking from under the lid
+
+  // cap: red crown + white 'E' disc + brim toward facing (skid tips it)
+  ctx.save();
+  if (pose.kind === 'skid') {
+    ctx.translate(0.8, -16 + u);
+    ctx.rotate(0.2);
+    ctx.translate(0, 16 - u);
+  }
+  R(-7.5, -19 + u, 15, 4.5, pal.cap);
+  R(-7.5, -19 + u, 3, 4.5, pal.capDark);
+  R(3, -16 + u, 7.5, 2, pal.cap); // brim
+  R(3, -14.4 + u, 7.5, 0.8, pal.capDark); // brim underside
+  D(0.5, -17.3 + u, 3.6, '#ffffff');
+  markE(ctx, ink, 0.5, -17.3 + u, 1.0, pal.discE);
+  ctx.restore();
+
+  // front arm (over everything: the glove must read)
+  if (pose.kind === 'jump') {
+    R(6, -17, 2.5, 6, pal.shirt);
+    D(7.3, -18, 1.9, pal.glove);
+  } else if (out) {
+    R(6, -8.5, 3.5, 2.5, pal.shirt);
+    D(9.6, -7.2, 1.9, pal.glove);
+  } else {
+    R(4.5, -8 - pose.arm, 2.5, 4, pal.shirt);
+    D(5.8, -3.5 - pose.arm, 1.8, pal.glove);
+  }
+  void air;
+}
+
+/** Certified/goldpen Estrada, facing +x, feet at y=0. ~30px tall. */
+function estradaBig(ctx: Ctx, pal: EstradaPal, pose: Pose, ink: boolean): void {
+  const { R, D } = inkable(ctx, ink);
+  const out = pose.kind === 'fall' || pose.kind === 'skid';
+  const u = pose.breathe;
+
+  // back arm
+  if (pose.kind === 'jump') {
+    R(-10, -26, 3, 7, pal.shirtDark);
+    D(-8.4, -27, 2.2, pal.glove);
+  } else if (out) {
+    R(-11.5, -14, 4, 3, pal.shirtDark);
+    D(-11.8, -12.3, 2.2, pal.glove);
+  } else {
+    R(-9, -14 + pose.arm, 3, 6.5, pal.shirtDark);
+    D(-7.3, -6.5 + pose.arm, 2.1, pal.glove);
+  }
+
+  // legs (bib-blue trousers) + shoes
+  if (pose.kind === 'jump') {
+    R(-5, -6.5, 4, 3, pal.bibDark); // tucked
+    R(1, -6.5, 4, 3, pal.bib);
+    R(-6, -4.5, 5.5, 2.5, pal.shoe);
+    R(1, -4, 5.5, 2.5, pal.shoe);
+  } else if (pose.kind === 'fall') {
+    R(-5.5, -5.5, 4, 3.5, pal.bibDark); // dangling
+    R(2, -5, 4, 3, pal.bib);
+    R(-7, -3, 6, 2.5, pal.shoe);
+    R(2, -2.5, 6, 2.5, pal.shoe);
+  } else {
+    R(-5.5 - pose.leg, -5, 4, 3.5, pal.bibDark);
+    R(1.5 + pose.leg, -5, 4, 3.5, pal.bib);
+    R(-7 - pose.leg, -2.5, 6, 2.5, pal.shoe);
+    R(1.5 + pose.leg, -2.5, 6.5, 2.5, pal.shoe);
+  }
+
+  // torso: red shirt chest, FULL blue bib + straps, gold buttons, belt stamp
+  R(-7, -16, 14, 4, pal.shirt);
+  R(-7, -16, 3, 4, pal.shirtDark);
+  R(-6, -13, 12, 8.5, pal.bib);
+  R(-6, -13, 2.5, 8.5, pal.bibDark);
+  R(-5, -15.5, 2, 3, pal.bib); // straps
+  R(3, -15.5, 2, 3, pal.bib);
+  D(-3.5, -11.5, 1.3, pal.button);
+  D(3.5, -11.5, 1.3, pal.button);
+  R(-9.5, -10, 3, 4.5, E_STAMP); // the notary stamp, holstered
+  R(-9.5, -10, 3, 1.2, pal.glove);
+
+  // head
+  R(-8, -24 + u, 16, 9.5, E_SKIN);
+  R(-8, -24 + u, 2.5, 9.5, E_SKIN_DK);
+  R(-8, -24 + u, 2.5, 6, E_HAIR); // sideburn
+  R(-8, -18.6 + u, 4, 1.4, E_HAIR); // forward hook
+  D(9, -18.5 + u, 3, E_NOSE);
+  R(3, -15.8 + u, 7, 1.8, E_TASH); // pencil moustache
+  R(9.5, -16.9 + u, 1.5, 1.3, E_TASH); // upturn
+  R(2.3, -21.9 + u, 4.4, 3.7, '#ffffff'); // eye
+  R(2.3, -21.9 + u, 4.4, 0.9, OUT); // the lid, at half mast
+  R(4.4, -21 + u, 1.8, 1.6, OUT); // low pupil peeking from under the lid
+
+  // cap
+  ctx.save();
+  if (pose.kind === 'skid') {
+    ctx.translate(1, -26 + u);
+    ctx.rotate(0.2);
+    ctx.translate(0, 26 - u);
+  }
+  R(-8.5, -29.5 + u, 17, 5.5, pal.cap);
+  R(-7, -30.5 + u, 14, 1.5, pal.cap); // crown rounding
+  R(-8.5, -29.5 + u, 3.5, 5.5, pal.capDark);
+  R(4, -25 + u, 8.5, 2.2, pal.cap); // brim
+  R(4, -23.2 + u, 8.5, 0.9, pal.capDark);
+  D(0.5, -27 + u, 4.2, '#ffffff');
+  markE(ctx, ink, 0.5, -27 + u, 1.15, pal.discE);
+  ctx.restore();
+
+  // front arm
+  if (pose.kind === 'jump') {
+    R(7, -26, 3, 7, pal.shirt);
+    D(8.6, -27, 2.2, pal.glove);
+  } else if (out) {
+    R(7.5, -14, 4, 3, pal.shirt);
+    D(11.8, -12.3, 2.2, pal.glove);
+  } else {
+    R(6, -14 - pose.arm, 3, 6.5, pal.shirt);
+    D(7.6, -6.5 - pose.arm, 2.1, pal.glove);
   }
 }
+
+/** Big-size duck: a proper squat (cap low, knees out) — no scale smear. */
+function estradaDuck(ctx: Ctx, pal: EstradaPal, ink: boolean): void {
+  const { R, D } = inkable(ctx, ink);
+  // body sliver + shoes
+  R(-6, -4.5, 12, 3, pal.bib);
+  R(-6, -4.5, 2, 3, pal.bibDark);
+  R(-7.5, -2.2, 6, 2.2, pal.shoe);
+  R(2, -2.2, 6, 2.2, pal.shoe);
+  // head, tucked
+  R(-7.5, -11.5, 15, 7, E_SKIN);
+  R(-7.5, -11.5, 2, 7, E_SKIN_DK);
+  R(-7.5, -11.5, 2, 4.5, E_HAIR);
+  R(-7.5, -7.6, 3.5, 1.2, E_HAIR);
+  D(8.5, -8, 2.8, E_NOSE);
+  R(3, -5.8, 6.5, 1.6, E_TASH);
+  R(9, -6.9, 1.4, 1.2, E_TASH);
+  R(2.5, -10.3, 3.7, 3, '#ffffff');
+  R(2.5, -10.3, 3.7, 0.8, OUT); // half-mast lid
+  R(4.1, -9.5, 1.5, 1.3, OUT); // low pupil
+  // cap pulled LOW
+  R(-8, -16.5, 16, 5, pal.cap);
+  R(-6.5, -17.5, 13, 1.5, pal.cap);
+  R(-8, -16.5, 3, 5, pal.capDark);
+  R(3.5, -12, 8, 2, pal.cap);
+  R(3.5, -10.4, 8, 0.8, pal.capDark);
+  D(0.5, -14.2, 3.7, '#ffffff');
+  markE(ctx, ink, 0.5, -14.2, 1.0, pal.discE);
+  // gloves braced at the sides
+  D(-8, -2.8, 2, pal.glove);
+  D(8.2, -2.8, 2, pal.glove);
+}
+
+/** KO'd: faces the CAMERA — X-eyes, arms up, the classic launch pose. */
+function estradaDead(ctx: Ctx, pal: EstradaPal, big: boolean, ink: boolean): void {
+  const { R, D } = inkable(ctx, ink);
+  if (big) {
+    R(-8, -2.5, 6, 2.5, pal.shoe); // legs splayed
+    R(2, -2.5, 6, 2.5, pal.shoe);
+    R(-5.5, -5, 4, 3, pal.bibDark);
+    R(1.5, -5, 4, 3, pal.bib);
+    R(-7, -16, 14, 4, pal.shirt);
+    R(-6, -13, 12, 8.5, pal.bib);
+    D(-3.5, -11.5, 1.3, pal.button);
+    D(3.5, -11.5, 1.3, pal.button);
+    R(-10, -25, 3, 7, pal.shirtDark); // arms thrown up
+    R(7, -25, 3, 7, pal.shirt);
+    D(-8.5, -26.5, 2.2, pal.glove);
+    D(8.5, -26.5, 2.2, pal.glove);
+    R(-8, -24, 16, 9.5, E_SKIN);
+    R(-8, -24, 2, 6, E_HAIR); // both sideburns: full-face view
+    R(6, -24, 2, 6, E_HAIR);
+    D(0.5, -19, 3, E_NOSE);
+    R(-4, -15.8, 9, 1.5, E_TASH);
+    R(-8.5, -29.5, 17, 5.5, pal.cap);
+    R(-7, -30.5, 14, 1.5, pal.cap);
+    R(-8, -24.6, 16, 1.1, pal.capDark); // brim edge-on
+    D(0.5, -27, 4.2, '#ffffff');
+    markE(ctx, ink, 0.5, -27, 1.15, pal.discE);
+    if (!ink) {
+      xEye(ctx, -4, -21, 2.3);
+      xEye(ctx, 5, -21, 2.3);
+    }
+  } else {
+    R(-6.5, -2, 5, 2, pal.shoe);
+    R(1.5, -2, 5, 2, pal.shoe);
+    R(-5, -7, 10, 5, pal.bib);
+    R(-3, -6.2, 1.6, 1.6, pal.button);
+    R(1.4, -6.2, 1.6, 1.6, pal.button);
+    R(-8.5, -16, 2.5, 5.5, pal.shirtDark);
+    R(6, -16, 2.5, 5.5, pal.shirt);
+    D(-7.2, -17, 1.9, pal.glove);
+    D(7.3, -17, 1.9, pal.glove);
+    R(-7, -15, 14, 8, E_SKIN);
+    R(-7, -15, 1.8, 5, E_HAIR);
+    R(5.2, -15, 1.8, 5, E_HAIR);
+    D(0.5, -10.5, 2.4, E_NOSE);
+    R(-3.5, -8.2, 8, 1.3, E_TASH);
+    R(-7.5, -19, 15, 4.5, pal.cap);
+    R(-7, -15.4, 14, 1, pal.capDark);
+    D(0.5, -17.3, 3.6, '#ffffff');
+    markE(ctx, ink, 0.5, -17.3, 1.0, pal.discE);
+    if (!ink) {
+      xEye(ctx, -3.5, -12.3, 1.9);
+      xEye(ctx, 4.5, -12.3, 1.9);
+    }
+  }
+}
+
+function estradaSprite(ctx: Ctx, pal: EstradaPal, big: boolean, pose: Pose, ink: boolean): void {
+  if (pose.kind === 'dead') estradaDead(ctx, pal, big, ink);
+  else if (pose.kind === 'duck' && big) estradaDuck(ctx, pal, ink);
+  else if (big) estradaBig(ctx, pal, pose, ink);
+  else estradaSmall(ctx, pal, pose, ink);
+}
+
+/** Silhouette-stamp offsets approximating a 2px ink outline. */
+const OUTLINE_OFFS: readonly (readonly [number, number])[] = [
+  [-1.6, 0], [1.6, 0], [0, -1.6], [0, 1.6],
+  [-1.1, -1.1], [1.1, -1.1], [-1.1, 1.1], [1.1, 1.1],
+];
+
+/** Landing-squash memory, keyed per player instance; render-side only. */
+const squashState = new WeakMap<PlayerLike, { prevVy: number; squashT: number }>();
 
 export function drawPlayer(ctx: Ctx, player: PlayerLike, cam: CameraState, frame: number): void {
   const sx = snap(player.x - cam.x);
@@ -1390,7 +1722,7 @@ export function drawPlayer(ctx: Ctx, player: PlayerLike, cam: CameraState, frame
 
   // landing squash bookkeeping (render-side vy history via WeakMap)
   const st = squashState.get(player) ?? { prevVy: 0, squashT: 0 };
-  if (player.grounded && st.prevVy > 4) st.squashT = 5;
+  if (player.grounded && st.prevVy > 4) st.squashT = 4;
   else if (st.squashT > 0) st.squashT--;
   st.prevVy = player.vy;
   squashState.set(player, st);
@@ -1398,41 +1730,76 @@ export function drawPlayer(ctx: Ctx, player: PlayerLike, cam: CameraState, frame
   let sclX = 1;
   let sclY = 1;
   if (st.squashT > 0 && player.grounded) {
-    sclX = 1.15;
-    sclY = 0.85;
-  } else if (!player.grounded && Math.abs(player.vy) > 4) {
-    sclX = 0.9;
-    sclY = 1.15;
+    sclX = 1.12;
+    sclY = 0.88;
+  } else if (!player.grounded && !player.dead && Math.abs(player.vy) > 5) {
+    sclX = 0.94;
+    sclY = 1.08;
   }
 
+  // Free-running animation clock. PlayerLike does not name animT; probe it
+  // informally (same accepted seam as checkpoint.claimed), fall back to frame.
+  const animT = (player as unknown as { animT?: number }).animT ?? frame;
   const pal = PLAYER_PAL[player.size];
   const big = player.size !== 'small';
-  const hh = player.halfH;
+  const speed = Math.abs(player.vx);
 
-  ctx.save();
-  ctx.translate(sx, sy + hh); // anchor at the feet
-  ctx.scale(player.facing * sclX, sclY);
+  // ---- pose from state (animT free-runs; gameplay never resets it) ----
+  let pose: Pose;
   if (player.dead) {
-    // KO'd: flipped in place. The performance is over (this take, anyway).
-    ctx.translate(0, -hh);
-    ctx.rotate(Math.PI);
-    ctx.translate(0, -hh);
+    pose = { kind: 'dead', leg: 0, arm: 0, breathe: 0 };
+  } else if (player.ducking && big) {
+    pose = { kind: 'duck', leg: 0, arm: 0, breathe: 0 };
+  } else if (!player.grounded) {
+    pose = { kind: player.vy < 0.6 ? 'jump' : 'fall', leg: 0, arm: 0, breathe: 0 };
+  } else if (player.skidding) {
+    pose = { kind: 'skid', leg: 2, arm: 0, breathe: 0 };
+  } else if (speed > 0.15) {
+    const period = speed > 2.4 ? 4 : 7; // run cycle vs walk cycle
+    const cyc = [0, 1, 2, 1][Math.floor(animT / period) % 4]!; // 3-frame stride
+    pose = { kind: 'walk', leg: (cyc - 1) * 2, arm: (cyc - 1) * 2, breathe: 0 };
+  } else {
+    pose = { kind: 'idle', leg: 0, arm: 0, breathe: Math.floor(animT / 32) % 2 };
   }
-  if (player.skidding && player.grounded) ctx.rotate(-0.15); // lean back
-  if (player.ducking && big) ctx.scale(1, 0.55); // squat
-  const walking = player.grounded && Math.abs(player.vx) > 0.15 && !player.ducking;
-  const walk = walking ? (Math.floor(frame / 7) % 2 === 0 ? 1 : -1) : 0;
-  drawEstradaBody(ctx, pal, big, walk, !player.grounded && !player.dead);
-  ctx.restore();
 
-  if (player.immunityT > 0) {
-    // Parliamentary Immunity: the man is LITERALLY untouchable, in rainbow
+  // Parliamentary Immunity: clean hue-cycling glow halo BEHIND the sprite
+  // (blinks off intermittently during the final second as a wear-off warning).
+  if (player.immunityT > 0 && !(player.immunityT < 60 && Math.floor(frame / 4) % 2 === 0)) {
+    const hue = (frame * 6) % 360;
+    const vh = big ? 30 : 20;
+    const gy = sy + player.halfH - vh / 2;
     ctx.save();
-    ctx.strokeStyle = `hsl(${(frame * 14) % 360} 90% 60%)`;
+    ctx.lineWidth = 5;
+    ctx.strokeStyle = `hsla(${hue}, 95%, 65%, 0.28)`;
+    ctx.beginPath();
+    ctx.ellipse(sx, gy, 15, vh / 2 + 6, 0, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.lineWidth = 2;
-    ctx.strokeRect(sx - player.halfW - 3, sy - player.halfH - 3, player.halfW * 2 + 6, player.halfH * 2 + 6);
+    ctx.strokeStyle = `hsla(${hue}, 95%, 62%, 0.9)`;
+    ctx.beginPath();
+    ctx.ellipse(sx, gy, 13, vh / 2 + 4, 0, 0, Math.PI * 2);
+    ctx.stroke();
     ctx.restore();
   }
+
+  ctx.save();
+  ctx.translate(sx, sy + player.halfH); // anchor at the feet
+  ctx.scale(player.facing * sclX, sclY);
+  if (pose.kind === 'walk') {
+    ctx.rotate(Math.min(0.11, speed * 0.028)); // forward lean scales with |vx|
+    if (pose.leg === 0) ctx.translate(0, -1); // stride bob on the passing frame
+  } else if (pose.kind === 'skid') {
+    ctx.rotate(-0.16); // heels dug in, leaning back
+  }
+  // 2px ink outline: stamp the whole silhouette in OUT, then paint the colors
+  for (const [ox, oy] of OUTLINE_OFFS) {
+    ctx.save();
+    ctx.translate(ox, oy);
+    estradaSprite(ctx, pal, big, pose, true);
+    ctx.restore();
+  }
+  estradaSprite(ctx, pal, big, pose, false);
+  ctx.restore();
 }
 
 // ---------------------------------------------------------------------------

@@ -183,6 +183,15 @@ export interface LevelBuilderLike {
   /** Vertical pipe: top opening at `row`, extends down `h` tiles. Optional
    *  lawyer plant. Pipes are decor+collision, not warps, unless linked. */
   pipe(x: number, row: number, h: number, opts?: { lawyer?: boolean }): void;
+  /** A one-way WARP: standing on pipe A's mouth and pressing down sinks the
+   *  player in; they rise out of pipe B. Lays BOTH pipes. The exit may never
+   *  be behind the entry (xB >= xA — the world closes behind the player).
+   *  Classic uses: a bonus room carved with room() below the lane (warp in,
+   *  loot, warp back out further along), or an honest shortcut. */
+  warpPipe(xA: number, rowA: number, hA: number, xB: number, rowB: number, hB: number): void;
+  /** Carve a rectangular room out of solid fill (tiles set to empty),
+   *  tile coords inclusive — for underground bonus vaults under the lane. */
+  room(x0: number, x1: number, y0: number, y1: number): void;
   spikes(x0: number, x1: number, row: number): void;
   lava(x0: number, x1: number, row: number): void;
   crumble(x0: number, x1: number, row: number): void;
@@ -208,6 +217,10 @@ export interface LevelBuilderLike {
 
 export interface EnemySpawn { kind: EnemyKind; x: number; y: number }
 
+/** One-way warp: enter the pipe whose mouth is at (ax, ay), emerge from the
+ *  one at (bx, by). Pixel coordinates of the mouth-top centers. */
+export interface WarpLink { ax: number; ay: number; bx: number; by: number }
+
 /** Everything a LevelBuilder run produces; the Level constructor consumes it.
  *  All positions in PIXELS (centers), converted from tile units by the builder. */
 export interface BuiltLevel {
@@ -224,6 +237,7 @@ export interface BuiltLevel {
   /** qblock contents keyed by `${tx},${ty}`. */
   blockContents: Map<string, BlockContents>;
   arena: { x0: number; x1: number; floorRow: number } | null;
+  warps: WarpLink[];
 }
 
 export interface LevelDef {

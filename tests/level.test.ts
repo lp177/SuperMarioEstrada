@@ -264,6 +264,39 @@ describe('Level', () => {
     expect(level.backLimitX).toBeLessThanOrEqual(level.player.x - level.player.halfW + 1e-6);
   });
 
+  it('warp pipes: down on the mouth rides to the exit, ratchet follows', () => {
+    const level = new Level(
+      makeDef(120, (b) => {
+        b.ground(0, 119, 30);
+        b.start(3, 29);
+        // entry pipe on the surface; bonus vault carved underground with the
+        // exit warp further along
+        b.warpPipe(10, 28, 2, 60, 28, 2);
+        b.goal(110, 29);
+      }),
+    );
+    const p = level.player;
+    // walk onto the entry mouth (center x = 10*16+16 = 176)
+    p.x = 176;
+    p.y = 28 * TILE - p.halfH;
+    p.vy = 0;
+    let evs = run(level, 2, inp());
+    expect(p.grounded).toBe(true);
+    // press down: transit begins, 'pipe' fires
+    evs = run(level, 1, inp({ down: true }));
+    expect(evs).toContain('pipe');
+    // ride completes within a second; player emerges on the exit mouth
+    evs = run(level, 60, inp());
+    expect(evs).toContain('pipe'); // the exit-side emit
+    expect(Math.abs(p.x - (60 * TILE + TILE))).toBeLessThan(2);
+    expect(p.y).toBeCloseTo(28 * TILE - p.halfH, 1);
+    // the world closed behind the exit, not the entry
+    expect(level.backLimitX).toBeGreaterThan(176);
+    // and play continues normally (no residual transit lock)
+    run(level, 10, inp({ right: true }));
+    expect(p.x).toBeGreaterThan(60 * TILE + TILE);
+  });
+
   it('a castle goal stays sealed until the boss encounter resolves', () => {
     const def: LevelDef = {
       ...makeDef(80, (b) => {

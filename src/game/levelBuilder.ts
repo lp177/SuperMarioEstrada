@@ -26,6 +26,7 @@ import type {
   LevelDef,
   PowerupKind,
   SpawnPoint,
+  WarpLink,
 } from '../core/types.ts';
 import { TILE, WORLD_H_TILES } from '../core/constants.ts';
 import { TileMap } from './tilemap.ts';
@@ -73,6 +74,7 @@ export class LevelBuilder implements LevelBuilderLike {
   readonly secrets: { index: number; x: number; y: number }[] = [];
   readonly springs: SpawnPoint[] = [];
   readonly checkpoints: SpawnPoint[] = [];
+  readonly warps: WarpLink[] = [];
   readonly blockContents = new Map<string, BlockContents>();
 
   private startPt: SpawnPoint | null = null;
@@ -139,6 +141,31 @@ export class LevelBuilder implements LevelBuilderLike {
     }
     if (opts?.lawyer) {
       this.enemies.push({ kind: 'lawyer', x: x * TILE + TILE, y: row * TILE });
+    }
+  }
+
+  /** One-way warp pair: lays both pipes and records the link. Enter A by
+   *  standing on its mouth and pressing down; emerge from B. Exit must never
+   *  be behind the entry — the world closes behind the player. */
+  warpPipe(xA: number, rowA: number, hA: number, xB: number, rowB: number, hB: number): void {
+    if (xB < xA) {
+      throw new Error(`warpPipe: exit x ${xB} is behind entry x ${xA} — the backtrack ratchet would trap the player`);
+    }
+    this.pipe(xA, rowA, hA);
+    this.pipe(xB, rowB, hB);
+    this.warps.push({
+      ax: xA * TILE + TILE, ay: rowA * TILE,
+      bx: xB * TILE + TILE, by: rowB * TILE,
+    });
+  }
+
+  /** Carve a rectangular room out of solid fill — underground bonus vaults.
+   *  Tile coords inclusive. */
+  room(x0: number, x1: number, y0: number, y1: number): void {
+    this.span(x0, x1, 'room');
+    if (y1 < y0) throw new Error(`room: y1 ${y1} above y0 ${y0}`);
+    for (let ty = y0; ty <= y1; ty++) {
+      for (let tx = x0; tx <= x1; tx++) this.map.setTile(tx, ty, 'empty');
     }
   }
 
@@ -260,6 +287,7 @@ export class LevelBuilder implements LevelBuilderLike {
       arena: this.arenaTiles
         ? { x0: center(this.arenaTiles.x0), x1: center(this.arenaTiles.x1), floorRow: this.arenaTiles.floorRow }
         : null,
+      warps: this.warps,
     };
   }
 }

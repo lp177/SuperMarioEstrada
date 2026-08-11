@@ -148,7 +148,8 @@ function castleFinish(b: LevelBuilderLike, x: number, row: number, width: number
 export const world4: LevelDef[] = [
   // -------------------------------------------------------------------------
   // w4a1 — the moat crossing. Gentlest castle act: one crumble drawbridge,
-  // one small lava moat, gaps of 3. Coins: 10+2+3+3+3+5+6+3+6+6 = 47.
+  // one small lava moat, gaps of 3, and the world's first warp vault (the
+  // moat maintenance cellar). Coins: 10+2+3+3+3+5+6+3+6+6+12 = 59.
   // Enemies: lobbyist, pollster, lawyer, rat, lobbyist = 5.
   // -------------------------------------------------------------------------
   {
@@ -189,6 +190,20 @@ export const world4: LevelDef[] = [
       c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
       expectCursor(c, 185, 'w4a1');
       castleFinish(b, c.endX, c.endRow, 200); // 6 coins
+      // WARP VAULT — the moat maintenance cellar. A pipe on the opening
+      // runway teaches the world's warp verb five tiles from spawn: press
+      // down, loot the coin cellar carved under the drawbridge approach,
+      // surface past the first gauntlet (SMB 1-1 precedent: the early pipe
+      // that skips a stretch is the classical bonus). 12 coins.
+      // Geometry: room ceiling keeps 2 rows of fill under the lane surface;
+      // both vault pipe mouths rise 2 over the bedrock floor (hop on, hop
+      // off), 3 clear rows above each mouth (rule 7 wants 2).
+      b.room(7, 18, 29, 33);
+      b.warpPipe(5, 24, 2, 9, 32, 2); // lane -> cellar
+      b.coinRow(12, 15, 31); // the hoard: 4x3
+      b.coinRow(12, 15, 32);
+      b.coinRow(12, 15, 33);
+      b.warpPipe(16, 32, 2, 52, 24, 2); // cellar -> lane past the gauntlet
     },
   },
 
@@ -235,6 +250,13 @@ export const world4: LevelDef[] = [
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
       expectCursor(c, 198, 'w4a2');
       castleFinish(b, c.endX, c.endRow, 210); // 6 coins
+      // WARP SHORTCUT — the deserters' tunnel. Bowsonaro's entourage dug an
+      // escape route under their own gavel corridor; explorers who press down
+      // on the parapet pipe skip the chipstack gauntlet and the three gavels,
+      // surfacing at the corridor's far end right before the checkpoint. The
+      // walking route (and its goldbar) stays mandatory-clean for the bot.
+      // Entry sits between the runway's coin rings (cols 32-34 / 37-39).
+      b.warpPipe(35, 20, 2, 84, 20, 2);
     },
   },
 
@@ -400,8 +422,9 @@ export const world4: LevelDef[] = [
   // -------------------------------------------------------------------------
   // w4a6 — OPTIONAL spur: the palace panic room, wall-to-wall entourage. Two
   // immunity galleries pace the blitz; goldbars 0 and 1 easy, 2 on top of the
-  // second gallery, 3 in a cellar, 4 on a spring shelf.
-  // Coins: 16+2+12+10+3+3+1+12+6 = 65. Enemies: 17.
+  // second gallery, 3 in a cellar, 4 on a spring shelf; the literal panic
+  // room is a warp vault under the third gauntlet.
+  // Coins: 16+2+12+10+3+3+1+12+6+15 = 80. Enemies: 17.
   // -------------------------------------------------------------------------
   {
     id: 'w4a6',
@@ -438,13 +461,26 @@ export const world4: LevelDef[] = [
       c = springShelf(b, c.endX, c.endRow, { index: 4 }); // hidden
       expectCursor(c, 190, 'w4a6');
       castleFinish(b, c.endX, c.endRow, 206); // 6 coins
+      // WARP VAULT — the ACTUAL panic room. The act is named for it: a pipe
+      // beside the mid-act checkpoint drops into the bunker under the blitz
+      // (canned coins, no windows), and the return pipe surfaces past the
+      // third entourage gauntlet — hiding in the panic room legitimately
+      // skips the panic. 15 coins.
+      // Geometry: room ceiling keeps 2 rows of fill under the lane; vault
+      // pipe mouths rise 2 over the bedrock floor, 3 clear rows above each.
+      b.room(86, 99, 29, 33);
+      b.warpPipe(84, 24, 2, 88, 32, 2); // checkpoint lane -> bunker
+      b.coinRow(91, 95, 31); // the emergency rations: 5x3
+      b.coinRow(91, 95, 32);
+      b.coinRow(91, 95, 33);
+      b.warpPipe(96, 32, 2, 102, 24, 2); // bunker -> lane past the gauntlet
     },
   },
 
   // -------------------------------------------------------------------------
   // w4a7 — FINAL CASTLE. The full palace tour, then the longest arena
   // approach in the campaign and the only fight Bowsonaro cannot jetpack out
-  // of. Coins: 16+3+4+16+3+7+4+3 = 56. Enemies: lobbyist, pollster,
+  // of. Coins: 16+3+4+16+3+5+4+3 = 54. Enemies: lobbyist, pollster,
   // chipstack, 3 gavels, lawyer, chipstack, rat = 9.
   // -------------------------------------------------------------------------
   {
@@ -471,7 +507,12 @@ export const world4: LevelDef[] = [
       b.qblock(87, 22, 'goldpen'); // bring a pen to the throne room
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: 1 }); // up to 20
-      c = coinArc(b, c.endX, c.endRow, { gap: 5 }); // 7 coins
+      // Speed retune (2026-08): the old 5-gap right off the climb gave ~4 flat
+      // tiles of approach — too short at runMax 3.8. Two runway tiles buy the
+      // sprint spin-up and the gap narrows to 3; endX is unchanged, so the
+      // crumble-over-lava absolutes below stay put.
+      c = runway(b, c.endX, c.endRow, { len: 2 });
+      c = coinArc(b, c.endX, c.endRow, { gap: 3 }); // 5 coins
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
       c = crumbleBridge(b, c.endX, c.endRow, { len: 6 });
       b.lava(119, 124, 28);

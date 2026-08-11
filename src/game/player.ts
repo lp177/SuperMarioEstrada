@@ -229,8 +229,14 @@ export class Player implements PlayerLike {
       this.events.push('jump');
     }
 
-    // Variable jump height: light gravity while rising with jump held, but
-    // only for real jumps (this.jumping) — bounces/springs clear the flag.
+    // Variable jump height, two mechanisms working together:
+    // - light gravity while rising with jump held (the stretch), and
+    // - a jump-CUT on release: letting go while still rising clamps upward
+    //   speed, so a tap gives a genuine short hop. Real jumps only
+    //   (this.jumping) — bounces/springs clear the flag and keep their arc.
+    if (!input.jump && this.jumping && this.vy < -PHYS.jumpCut) {
+      this.vy = -PHYS.jumpCut;
+    }
     const g =
       this.vy < 0 && input.jump && this.jumping ? PHYS.gravHold : PHYS.grav;
     this.vy = Math.min(this.vy + g, PHYS.maxFall);

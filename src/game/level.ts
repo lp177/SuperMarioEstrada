@@ -25,6 +25,7 @@ import type {
   PlayerLike,
   SpawnPoint,
   TileKind,
+  WarpLink,
   TileMapLike,
 } from '../core/types.ts';
 import {
@@ -141,6 +142,9 @@ export class Level implements LevelLike {
   private readonly ctx: EntityCtx;
 
   private respawnPoint: SpawnPoint;
+  /** Warp links from the builder; transit state while riding a pipe. */
+  private readonly warps: WarpLink[];
+  private activeWarp: { link: WarpLink; phase: 'in' | 'out'; t: number } | null = null;
   /** Counts down after death; at 0 the player respawns. -1 = idle. */
   private deathTimer = -1;
   /** Counts down after 'goal'; at 0 'flag-plant' fires. -1 = idle. */
@@ -161,6 +165,7 @@ export class Level implements LevelLike {
     this.goalY = (built.goalRow + 0.5) * TILE;
     this.blockContents = built.blockContents;
     this.arena = built.arena;
+    this.warps = built.warps;
 
     // Pre-validate: every qblock on the map MUST have declared contents.
     // A missing entry is a builder bug — throw NOW, never at play time.
@@ -243,10 +248,33 @@ export class Level implements LevelLike {
     this.jumpHeld = input.jump; // stomp bounce height reads this step's hold
     if (this.bossStaggerT > 0) this.bossStaggerT--;
 
+    // 1b. warp transit: while riding a pipe the world holds its breath —
+    // physics, entities and hazards all pause; only the ride animates. This
+    // both looks classic and makes the transit state trivially safe.
+    if (this.activeWarp) {
+      this.updateWarp();
+      for (const ev of this.player.events) this.events.push(ev);
+      return this.events;
+    }
+
     // 2. player physics. Player events are read at the END of the step: hurt()
     // / bounce() / respawn() may append to player.events mid-step and reading
     // early would drop them (they get cleared by the next update()).
     this.player.update(input, this.map);
+
+    // 2b. warp entry: standing on a warp pipe's mouth and pressing down.
+    if (!this.player.dead && this.player.grounded && input.down) {
+      for (const w of this.warps) {
+        if (
+          Math.abs(this.player.x - w.ax) <= 10 &&
+          Math.abs(this.player.y + this.player.halfH - w.ay) <= 6
+        ) {
+          this.activeWarp = { link: w, phase: 'in', t: 0 };
+          this.emitAt('pipe', w.ax, w.ay);
+          break;
+        }
+      }
+    }
 
     // death timer -> respawn (runs after player.update so a 'respawn' raised
     // by the player survives until the end-of-step collection)
@@ -270,6 +298,9 @@ export class Level implements LevelLike {
       if (!e.alive) continue;
       const contact = e.update(this.ctx);
       this.resolveContact(contact, e);
+      // The bottom of the map is open void now — anything that walks or is
+      // kicked off the edge falls out of the world and is culled.
+      if (e.y > this.map.pixelH + 200) e.alive = false;
     }
     // springs launch harder than a stomp bounce: bounce clears the variable-
     // jump state, then vy is overridden so the launch cannot be jump-cut.
@@ -339,6 +370,36 @@ export class Level implements LevelLike {
     if (this.ents.some((e) => !e.alive)) this.ents = this.ents.filter((e) => e.alive);
 
     return this.events;
+  }
+
+  /** The pipe ride: sink into A, teleport, rise out of B. The ratchet and
+   *  camera jump WITH the player — exits are builder-validated to never be
+   *  behind the entry. */
+  private updateWarp(): void {
+    const w = this.activeWarp;
+    if (!w) return;
+    const p = this.player;
+    w.t++;
+    p.vx = 0;
+    p.vy = 0;
+    if (w.phase === 'in') {
+      p.y += 0.9; // sink into the pipe
+      if (w.t >= 24) {
+        p.x = w.link.bx;
+        p.y = w.link.by + p.halfH + 4; // start inside pipe B's neck
+        this._backLimitX = Math.max(this._backLimitX, w.link.bx - BACKTRACK_SLACK);
+        this.snapCamera();
+        this.emitAt('pipe', w.link.bx, w.link.by);
+        w.phase = 'out';
+        w.t = 0;
+      }
+    } else {
+      p.y -= 1.2; // rise out
+      if (p.y <= w.link.by - p.halfH) {
+        p.y = w.link.by - p.halfH;
+        this.activeWarp = null;
+      }
+    }
   }
 
   // -------------------------------------------------------------------------

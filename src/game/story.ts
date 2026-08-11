@@ -18,9 +18,10 @@ export const SCRIPTS: Record<CutsceneId, CutsceneScript> = {
       { art: 'dungeon', speaker: '', text: 'Then, one quiet night, the real Princess Peach... went into storage.' },
       { art: 'wardrobe', speaker: '', text: 'And the greatest theatrical production in kingdom history began.' },
       { art: 'staged-kidnap', speaker: 'PRINCESS IMPEACH', text: 'HELP! I am being kidnapped! And there is NOTHING suspicious about my hands!' },
-      { art: 'hero-speech', speaker: 'ESTRADA', text: 'I will rescue the princess MYSELF! Alone! Nobody follow me! ESPECIALLY you, Mangiani!' },
+      { art: 'hero-speech', speaker: 'ESTRADA', text: 'Toads! Your princess will be saved — by ME. Personally. In fact, consider her ALREADY saved. It is done. The greatest rescue in history, everyone is saying so.' },
+      { art: 'hero-speech', speaker: 'ESTRADA', text: 'A tremendous deal has been made. The paperwork is stamped. Go home, relax. (All bets remain final, obviously.)' },
       { art: 'mangiani-joins', speaker: 'MANGIANI', text: 'I lost everything on that bet. But Peach is my friend. I am coming with you.' },
-      { art: 'mangiani-joins', speaker: 'ESTRADA', text: '...Wonderful.' },
+      { art: 'mangiani-joins', speaker: 'ESTRADA', text: '...You are WHAT. I mean — wonderful. Wonderful!' },
     ],
   },
 
