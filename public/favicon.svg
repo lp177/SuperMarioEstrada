@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Notary stamp "E" — Estrada certifies every coin he steals. -->
+  <rect width="32" height="32" rx="6" fill="#b71c1c"/>
+  <circle cx="16" cy="16" r="11" fill="none" stroke="#ffca28" stroke-width="2" stroke-dasharray="3 2"/>
+  <text x="16" y="22" font-family="monospace" font-size="16" font-weight="bold" fill="#ffca28" text-anchor="middle">E</text>
+</svg>

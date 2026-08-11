@@ -1,0 +1,4 @@
+node_modules/
+*.log
+.DS_Store
+# docs/ is committed build output — do NOT ignore it.
