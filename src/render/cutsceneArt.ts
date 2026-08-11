@@ -790,24 +790,58 @@ const sceneNotary: SceneFn = (c, frame) => {
   // desk
   rect(c, 120, 240, 400, 70, '#6b4420');
   flat(c, 120, 240, 400, 12, '#835b2f');
-  // MOUNTAIN of bet slips
-  const rng = createRng(202);
-  for (let i = 0; i < 26; i++) {
-    const px = 150 + rng() * 180;
-    const py = 235 - rng() * 70 * (1 - Math.abs(px - 240) / 200);
-    c.save(); c.translate(px, py); c.rotate((rng() - 0.5) * 0.5);
+  // The TRANSPARENT URN of bet slips, sitting on the desk. The pile lives
+  // INSIDE the glass (clipped), bottom-heavy like real tombola stuffing.
+  const uX = 148, uW = 168, uTop = 126, uBottom = 240;
+  const slip = (px: number, py: number, rot: number): void => {
+    c.save(); c.translate(px, py); c.rotate(rot);
     rect(c, -16, -10, 32, 20, '#f4f0e6', 2);
     seg(c, -10, -3, 10, -3, '#b9b2a4', 1.5);
     seg(c, -10, 3, 8, 3, '#b9b2a4', 1.5);
     c.restore();
+  };
+  // back glass
+  flat(c, uX, uTop, uW, uBottom - uTop, 'rgba(190,220,255,0.10)');
+  // slips clipped to the urn interior, piled toward the bottom
+  const rng = createRng(202);
+  c.save();
+  c.beginPath();
+  c.rect(uX + 3, uTop + 10, uW - 6, uBottom - uTop - 13);
+  c.clip();
+  for (let i = 0; i < 26; i++) {
+    const px = uX + 14 + rng() * (uW - 28);
+    const py = uBottom - 14 - rng() * rng() * (uBottom - uTop - 44);
+    slip(px, py, (rng() - 0.5) * 0.9);
   }
+  c.restore();
+  // one slip forever dropping through the lid slot (the business is booming)
+  const dropT = (frame * 0.012) % 1;
+  if (dropT < 0.55) slip(uX + uW / 2, uTop - 18 + dropT * 60, dropT * 1.2);
+  // front glass: sheen + slanted highlight, then the outline and the lid slot
+  flat(c, uX, uTop, uW, uBottom - uTop, 'rgba(210,235,255,0.12)');
+  c.save();
+  c.beginPath();
+  c.moveTo(uX + 18, uBottom); c.lineTo(uX + 52, uTop); c.lineTo(uX + 70, uTop);
+  c.lineTo(uX + 36, uBottom); c.closePath();
+  c.fillStyle = 'rgba(255,255,255,0.10)';
+  c.fill();
+  c.restore();
+  c.lineWidth = 3; c.strokeStyle = '#141020';
+  c.strokeRect(uX, uTop, uW, uBottom - uTop);
+  rect(c, uX - 6, uTop - 8, uW + 12, 10, '#835b2f', 2);            // lid
+  flat(c, uX + uW / 2 - 22, uTop - 5, 44, 4, '#141020');           // the slot
+  rect(c, uX + uW / 2 - 26, uBottom - 26, 52, 16, '#f4f0e6', 2);   // label
+  txt(c, 'BETS', uX + uW / 2, uBottom - 14, 10, P.estradaRed);
+  // a couple of loose slips lying flat ON the desk, waiting for the stamp
+  slip(352, 232, 0.08);
+  slip(374, 234, -0.12);
   // a slip mid-stamp, CERTIFIED in red
   rect(c, 400, 214, 84, 26, '#f4f0e6', 2);
   txt(c, 'CERTIFIED', 442, 227, 11, P.estradaRed);
-  // candle
-  rect(c, 545, 216, 10, 26, '#f4f0e6', 2);
+  // candle — ON the desk (desk spans x 120..520; keep the base inside it)
+  rect(c, 494, 216, 10, 26, '#f4f0e6', 2);
   const fl = Math.sin(frame * 0.3) * 2;
-  ell(c, 550 + fl * 0.4, 208 + Math.abs(fl) * 0.6, 4, 7, '#ffb347', 2);
+  ell(c, 499 + fl * 0.4, 208 + Math.abs(fl) * 0.6, 4, 7, '#ffb347', 2);
   // Estrada in the half-mask, stamping, winking every ~2.5s
   const wink = (frame % 150) < 22;
   const stampBeat = Math.sin(frame * 0.15) > 0.4;
