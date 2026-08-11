@@ -48,17 +48,87 @@ Original art and music only: parody the *genre*, never copy Nintendo assets,
 sprites, names ("Estrada", "Mangiani", "Impeach", "Bowsonaro" are the names) or
 melodies.
 
+**Sprinkle real scandals and catchphrases** into dialogue, excuse lines, decor
+text and boss barks — occasionally, as seasoning, never wall-to-wall. Impeach:
+"fake news", "witch hunt", "many people are saying", "a very stable genius",
+"I know words, I have the best words", "perfect phone call", covfefe as a
+magic word. Bowsonaro: "So what?" ("E daí?"), "the system is rigged", the
+myth/"mito" chant, refusing a vaccine because it "turns you into a crocodile",
+motorcycle parades, "historically, turtles…". Estrada: notary/certification
+jargon abused for everything, suspicious coffee breaks, "it is documented".
+Each gag lands harder when tied to that world's producer.
+
+## Design pillar: THE WORLD IS A SET (settled)
+
+Every level is a stage production BUILT BY THE CONSPIRATORS — and they are
+terrible at stagecraft. The landscape must read as a badly-assembled theatre
+set in Mario clothing ("Paper Mario, but the producers are dummies"):
+
+- Bushes/clouds are flat cardboard cutouts on visible wooden prop sticks, some
+  upside down, patched with duct-tape crosses.
+- The sky is a painted canvas backdrop: visible seams, wrinkles, a curling
+  corner, scaffolding poles and sandbags peeking at the edges.
+- Badly hidden studio gear: stage lights on tripods, cables taped across the
+  ground, a boom mic dipping into frame, a camera dolly in the background,
+  clapperboards ("RESCUE ATTEMPT — TAKE 12"), cue cards on the floor.
+- Props keep their labels: "CLOUD (PROP)", price stickers, "RENT-A-CASTLE"
+  tags, WET PAINT signs, spilled paint buckets.
+- Forced perspective done wrong: distant castles are obviously tiny paper
+  cutouts, sometimes seen edge-on (paper-thin).
+- Crumble platforms are taped cardboard; one-way platforms are planks on
+  sawhorses; the paparazzo drone hangs from a visible wire.
+- Background "crowds" of Toads are cardboard-cutout audiences.
+- The gag intensifies with each world — by the castle they stopped trying.
+
+The REAL kingdom (dungeon backgrounds, the real Peach) is NOT a set — it is
+drawn sincerely. The fakeness belongs only to what the conspirators staged.
+
+The world map is their CONSPIRACY CORKBOARD: level polaroids pinned to cork,
+routes in red yarn, the castle circled in red marker.
+
 ## Campaign shape
 
-**4 worlds x 4 acts = 16 acts.** Act 4 of each world is a castle with a staged
-Bowsonaro "fight". Worlds:
+**4 worlds, 30 acts, a branching world-map graph** (see `src/levels/maps.ts`:
+7+8+8+7, castle last in each world; branch choices + optional spur acts;
+cleared acts replayable from the map). Worlds:
 
-| # | World | Theme id | Satire |
-|---|-------|----------|--------|
-| 1 | Mushroom Heights | `meadow` | The kingdom right after the scam: foreclosure signs, betting billboards |
-| 2 | The Money Pipes | `sewer` | Underground coin laundering; rats, skeletons, leaking pipes; the real Peach's dungeon door appears in the background |
-| 3 | Casino Peninsula | `casino` | The betting platform made physical: slots, cards, neon, chips |
-| 4 | Bowsonaro's Grand Palace | `castle` | Lava, gold statues of Impeach, ballot-box battlements |
+| # | World | Theme id | Set built by | Satire |
+|---|-------|----------|--------------|--------|
+| 1 | Mushroom Heights | `meadow` | **Mario Estrada** (his hero-movie opening set) | The kingdom right after the scam: foreclosure signs, betting billboards, film-crew gear |
+| 2 | The Money Pipes | `sewer` | **Impeach/Trump** (his laundering back office) | Underground coin laundering; rats, skeletons, leaking pipes; the real Peach's dungeon door appears in the background |
+| 3 | Casino Peninsula | `casino` | **Impeach/Trump** (he insisted on having TWO areas) | The betting platform made physical: slots, cards, neon, chips |
+| 4 | Bowsonaro's Grand Palace | `castle` | **Bowsonaro** (home turf) | Lava, gold statues of Impeach, ballot-box battlements |
+
+### Art direction: CARICATURE FIRST, COSTUME SECOND (settled)
+
+Characters are drawn as political-cartoon caricatures — the exaggerated visual
+shorthand every newspaper cartoonist uses: Impeach/Trump = orange skin, yellow
+combed-over swoop, pouting lips, long red tie (worn OVER the Peach dress), and
+the oversized-hands running gag; Bowsonaro = aviator sunglasses, military
+beret, jutting chin, soccer-jersey colors; Estrada = smug half-lid eyes, pencil
+moustache, slicked hair under the cap. The caricature is NEVER hidden by a
+disguise: costumes are worn over it and fail to cover it (wig gaps, tie
+hanging out of the dress, sunglasses over a goomba hood). Rule for every
+sprite, boss, cutscene panel and statue: a player who has seen one political
+cartoon of the real person must recognize them at 640x360 in one glance —
+recognizability beats prettiness.
+
+### Enemies are the owner's entourage in bad costumes (settled)
+
+Every enemy is a friend / relative / lawyer / employee of the world's producer,
+badly disguised as a classic Mario-style enemy: visible back zippers, 'HELLO
+I'M…' name tags, human shoes under the costume, costume heads under one arm on
+break. Mechanics NEVER change per world — only the skin and the joke:
+
+| Kind (mechanic) | W1 Estrada's set | W2 Trump's pipes | W3 Trump's casino | W4 Bowsonaro's palace |
+|---|---|---|---|---|
+| lobbyist (walker) | Cousin Fabio in a goomba onesie, zipper open | junior lawyer, brown suit | pit-boss nephew, gold chain | army buddy in barrel costume |
+| pollster (shell) | Estrada's agent, beret + script-covered shell | campaign volunteer, red cap | croupier turtle, bow tie | son #01 in soccer-jersey shell |
+| lawyer (pipe plant) | makeup artist with powder puff | THE lawyer plant, 'OBJECTION!' briefcase jaws | waitress plant serving subpoenas | general plant with medals |
+| paparazzo (flyer) | the DOP's camera on a visible wire | 'TOTALLY A BIRD' surveillance drone | winged security camera | military drone in a beret |
+| rat (scurrier) | intern in a rat costume | accountant rat, green visor | card-counting rat | a CAPYBARA (real, unbothered) |
+| chipstack (hopper) | stack of film cans | stack of coin rolls | stack of poker chips | stack of ballot boxes |
+| gavel (crusher) | boom mic slamming into frame | judge's gavel | giant slot-machine lever | giant army boot |
 
 Story beats: `intro` cinematic (the scam, played once at campaign start) ->
 each act ends with a short **sting** (Estrada plants a "MISSION FAILED

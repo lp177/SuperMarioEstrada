@@ -13,7 +13,7 @@
 
 export type ThemeId = 'meadow' | 'sewer' | 'casino' | 'castle';
 
-export type SceneName = 'title' | 'levelselect' | 'cutscene' | 'level';
+export type SceneName = 'title' | 'worldmap' | 'cutscene' | 'level';
 
 export type TrackId =
   | 'title'
@@ -95,9 +95,37 @@ export type ActionId = 'left' | 'right' | 'up' | 'down' | 'jump' | 'run' | 'paus
 // ---------------------------------------------------------------------------
 
 export type WorldNo = 1 | 2 | 3 | 4;
-export type ActNo = 1 | 2 | 3 | 4;
+export type ActNo = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 /** Stable string id — progress is keyed by THIS, never by array index. */
 export type LevelId = `w${WorldNo}a${ActNo}`;
+
+// ---------------------------------------------------------------------------
+// World map (SMB3-style overworld). The campaign is a GRAPH, not a list:
+// branch nodes offer a choice of route, optional acts sit on spurs, cleared
+// acts stay replayable from the map.
+// ---------------------------------------------------------------------------
+
+export interface MapNode {
+  levelId: LevelId;
+  /** Position on the 640x360 map screen. */
+  x: number;
+  y: number;
+  /** Forward edges (walkable both ways once unlocked). */
+  next: LevelId[];
+  /** Not required to reach the castle. */
+  optional?: boolean;
+}
+
+export interface WorldMapDef {
+  world: WorldNo;
+  name: string;
+  /** Which conspirator built this set — shown as a producer credit. */
+  producer: string;
+  theme: ThemeId;
+  /** First node of this world (entered from the previous castle). */
+  entry: LevelId;
+  nodes: MapNode[];
+}
 
 /** Tile kinds. The solidity of each kind lives in SOLIDITY (constants.ts). */
 export type TileKind =
@@ -365,6 +393,9 @@ export interface LevelLike {
   camera: CameraState;
   /** The world closes behind the player: x below this is walled off. */
   readonly backLimitX: number;
+  /** Goal door position (px / tile row) — the painter draws the facade here. */
+  readonly goalX: number;
+  readonly goalRow: number;
   /** Where event fx spawn, when not at the player. Cleared each step. */
   readonly eventSources: ReadonlyMap<GameEvent, SpawnPoint>;
   readonly boss: BossLike | null;
@@ -459,8 +490,11 @@ export interface SettingsData {
 
 export type SceneParams = {
   title: Record<string, never>;
-  levelselect: Record<string, never>;
-  cutscene: { id: CutsceneId; then: { scene: 'title' } | { scene: 'level'; levelId: LevelId } };
+  worldmap: { focus?: LevelId };
+  cutscene: {
+    id: CutsceneId;
+    then: { scene: 'title' } | { scene: 'worldmap'; focus?: LevelId } | { scene: 'level'; levelId: LevelId };
+  };
   level: { levelId: LevelId };
 };
 
