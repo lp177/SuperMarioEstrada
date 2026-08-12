@@ -801,7 +801,9 @@ function drawImpeachStatue(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.arc(x, y - 33, 3.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillRect(x - 2, y - 39, 4, 2);
-  // arms with disproportionate hands — the sculptor worked from life
+  // arms ending in the fake padded gloves — hands <= head-size, OVERLAPPING
+  // the arm tips (tangent joints read as floating; the deadpan-glove canon
+  // in AGENTS.md replaced the old giant-hands spectacle)
   ctx.strokeStyle = gold;
   ctx.lineWidth = 1.5;
   ctx.beginPath();
@@ -812,8 +814,8 @@ function drawImpeachStatue(ctx: CanvasRenderingContext2D, x: number, y: number, 
   ctx.stroke();
   ctx.fillStyle = gold;
   ctx.beginPath();
-  ctx.arc(x - 11, y - 21, 4 + (v % 2), 0, Math.PI * 2);
-  ctx.arc(x + 11, y - 21, 4 + (v % 2), 0, Math.PI * 2);
+  ctx.arc(x - 9.5, y - 21.5, 3 + (v % 2) * 0.5, 0, Math.PI * 2);
+  ctx.arc(x + 9.5, y - 21.5, 3 + (v % 2) * 0.5, 0, Math.PI * 2);
   ctx.fill();
 }
 

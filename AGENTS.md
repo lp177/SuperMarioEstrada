@@ -43,7 +43,14 @@ the cutscene theatrics — that IS the joke.
   an 'L' (= Lorenzo): an 'M' on the green cap read as MARIO's letter —
   parody initials stay (E = Estrada), first-name L for the green brother.
 - **Princess Impeach** — Trump in a Peach dress. Orange skin, yellow wig under
-  the crown, tiny crown, huge hands (a running gag — hands are drawn BIG).
+  the crown, tiny crown — and OBVIOUSLY FAKE oversized costume gloves
+  (foam-mascot style, at most head-sized ≈ the canonical 40 cm). THE HAND GAG
+  IS DEADPAN, NOT SPECTACLE (playtest-settled after two failures): the joke is
+  that the gloves are visibly fake padding on a bad disguise and Mangiani
+  keeps NOTICING and measuring while everyone else ignores it. Never draw a
+  hand bigger than her head, never as scenery, and NEVER stretch an arm to
+  place a hand — arms stay anatomically normal and attached. Comic-inset
+  devices (a magnifier circle with an annotation) do the pointing instead.
 - **Bowsonaro** — Bolsonaro in a spiked turtle shell. Rants about ballots and
   "the system".
 - **The real Peach** — glimpsed in dungeon backgrounds; freed in the ending.

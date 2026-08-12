@@ -847,7 +847,9 @@ function drawCastle(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numb
     ctx.fillRect(sx - 3, baseY - 115, 1, 3);
     ctx.fillRect(sx - 0.5, baseY - 115, 1, 3);
     ctx.fillRect(sx + 2, baseY - 115, 1, 3);
-    // thin arms ending in ENORMOUS hands (the sculptor was paid to notice)
+    // arms ending in the fake padded gloves — hands <= head-size (7),
+    // centers overlapping the arm tips (deadpan-glove canon, AGENTS.md;
+    // tangent joints read as floating)
     ctx.strokeStyle = gold;
     ctx.lineWidth = 2.5;
     ctx.beginPath();
@@ -858,8 +860,8 @@ function drawCastle(ctx: CanvasRenderingContext2D, cam: CameraState, frame: numb
     ctx.stroke();
     ctx.fillStyle = gold;
     ctx.beginPath();
-    ctx.arc(sx - 24, baseY - 70, 8 + h * 2, 0, Math.PI * 2);
-    ctx.arc(sx + 24, baseY - 70, 8 + h * 2, 0, Math.PI * 2);
+    ctx.arc(sx - 21, baseY - 71, 6 + h, 0, Math.PI * 2);
+    ctx.arc(sx + 21, baseY - 71, 6 + h, 0, Math.PI * 2);
     ctx.fill();
   });
 

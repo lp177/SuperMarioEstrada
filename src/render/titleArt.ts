@@ -7,7 +7,7 @@
 
 import { VIEW_W, VIEW_H } from '../core/constants.ts';
 import { createRng } from '../core/rng.ts';
-import { drawEstrada, drawMangiani, bigHand } from './cutsceneArt.ts';
+import { drawEstrada, drawMangiani, drawImpeach } from './cutsceneArt.ts';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -153,11 +153,11 @@ export function drawTitleArt(ctx: CanvasRenderingContext2D, frame: number): void
   c.fillStyle = '#241640';
   c.fillRect(0, 240, VIEW_W, VIEW_H - 240);
 
-  // Impeach's HUGE hand waving from behind the castle (the gag never rests).
-  // Drawn BEFORE the castle: its sleeve angles down-left and is swallowed by
-  // the tower silhouette — the arm is attached to a body hidden behind it.
-  const wt = Math.sin(frame * 0.06);
-  bigHand(c, 588, 108 + wt * 8, 34, 0.55 + wt * 0.12, 110);
+  // Impeach peeking from behind the castle's LEFT tower (the right side
+  // belongs to Mangiani's magnifier gag), waving her fake costume glove at
+  // honest scale — deadpan, not spectacle. Drawn BEFORE the castle: the
+  // tower swallows her right half.
+  drawImpeach(c, 392, 240, 0.62, { facing: -1, hands: 'wave', waveT: frame, mouth: 'smug' });
   // the castle, right of center
   castleSilhouette(c, 420, 240, 1.0);
 

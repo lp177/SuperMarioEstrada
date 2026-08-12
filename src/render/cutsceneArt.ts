@@ -17,7 +17,7 @@ import {
   INK, LW, P, COIN, COIN_DARK,
   rect, flat, disc, ell, poly, seg, txt,
   coin, coffeeCup, sparkle, speechSpikes, rat, skeleton,
-  bigArm, drawEstrada, drawImpeach, drawBowsonaro, drawMangiani, drawPeach, drawToad,
+  bigHand, bigArm, drawEstrada, drawImpeach, drawBowsonaro, drawMangiani, drawPeach, drawToad,
 } from './cast.ts';
 
 // Re-export the cast so existing consumers (titleArt) keep their import path.
@@ -632,6 +632,14 @@ const sceneNotary: SceneFn = (c, frame) => {
   planks(c, 310, '#4a3520', '#3a2814');
   ell(c, 320, 336, 250, 24, '#5a2c28', 2.5);
   ell(c, 320, 336, 220, 18, '#6a3830', 2);
+  // Estrada in the half-mask, stamping, winking every ~2.5s — drawn BEFORE
+  // the desk so its top hides his waist: he is the teller BEHIND it, not a
+  // customer hovering in front with his feet off the floor (layering rule)
+  const wink = (frame % 150) < 22;
+  drawEstrada(c, 330, 308, 1.25, {
+    facing: 1, masked: true, eyes: wink ? 'wink' : 'smug', mouth: 'grin',
+    arms: 'stamp', item: 'stamp',
+  });
   // THE DESK (x 120..520, top 240) — everything on it stays inside that span
   flat(c, 120, 240, 400, 12, '#835b2f');
   seg(c, 120, 240, 520, 240, INK, LW);
@@ -692,13 +700,7 @@ const sceneNotary: SceneFn = (c, frame) => {
   ell(c, 505 + fl * 0.4, 208 + Math.abs(fl) * 0.6, 4, 7, '#ffb347', 2);
   ell(c, 505 + fl * 0.3, 210, 1.8, 3, '#ffe9a0', 0);
   motes(c, 77, 8, 440, 160, 130, 90, frame);        // dust drifting in the glow
-  // Estrada in the half-mask, stamping, winking every ~2.5s
-  const wink = (frame % 150) < 22;
   const stampBeat = Math.sin(frame * 0.15) > 0.4;
-  drawEstrada(c, 330, 300, 1.25, {
-    facing: 1, masked: true, eyes: wink ? 'wink' : 'smug', mouth: 'grin',
-    arms: 'stamp', item: 'stamp',
-  });
   if (stampBeat) {
     txt(c, 'KA-CHUNK', 430, 168, 14, COIN);
     speechSpikes(c, 408, 190, 3, frame);
@@ -1001,8 +1003,8 @@ const sceneStagedKidnap: SceneFn = (c, frame) => {
   rect(c, 524, 252, 96, 42, '#f4f0e6', 2.5);         // card rests on his raised hands
   txt(c, 'HELP. OH NO.', 572, 266, 10, INK, 'center', false);
   txt(c, 'ETC.', 572, 282, 10, INK, 'center', false);
-  seg(c, 552, 294, 556, 302, INK, 2);                // his hands touch the card
-  seg(c, 584, 294, 580, 302, INK, 2);
+  seg(c, 553, 294, 551, 310, INK, 2);                // card gripped by his raised hands
+  seg(c, 583, 294, 581, 310, INK, 2);
   txt(c, 'THE CRIME OF THE CENTURY (SCHEDULED, 15H)', 306, 22, 13, INK, 'center', false);
   // FOREGROUND: the boom mic dips into frame — nobody notices, ever
   boomMic(c, 530, frame);
@@ -1122,16 +1124,18 @@ const sceneGrandEscape: SceneFn = (c, frame) => {
     seg(c, 126 + Math.cos(a) * 10, 198 + Math.sin(a) * 10,
       126 + Math.cos(a) * 17, 198 + Math.sin(a) * 17, 'rgba(255,255,255,0.65)', 2);
   }
-  // Estrada BARELY visible behind the keep's corner, timing the next failure
-  drawEstrada(c, 286, 360, 0.5, { facing: -1, eyes: 'smug', mouth: 'grin', arms: 'down' });
-  seg(c, 291, 343, 296, 334, P.estradaRed, 3);         // forearm raised to eye level
-  disc(c, 297, 332, 2.6, P.glove, 1.5);
-  seg(c, 296, 331, 293, 340, COIN_DARK, 1.2);          // watch chain to the bib
-  disc(c, 299, 327, 4.2, COIN, 1.5);                   // the pocket watch, moonlit
-  seg(c, 299, 327, 299, 324.5, INK, 1);                // its hands: almost time
-  seg(c, 299, 327, 301.5, 327.5, INK, 1);
-  flat(c, 258, 240, 30, 120, stone);                   // the corner column hides most of him
-  seg(c, 288, 240, 288, 360, INK, 2);
+  // Estrada half-hidden behind the keep's corner, timing the next failure —
+  // the column swallows his LEFT half only: what peeks out is one connected
+  // vertical sliver (half face + torso + leg + shoe), never loose fragments
+  drawEstrada(c, 290, 360, 0.5, { facing: -1, eyes: 'smug', mouth: 'grin', arms: 'down' });
+  seg(c, 295, 343, 300, 334, P.estradaRed, 3);         // forearm raised to eye level
+  disc(c, 301, 332, 2.6, P.glove, 1.5);
+  seg(c, 300, 331, 297, 340, COIN_DARK, 1.2);          // watch chain to the bib
+  disc(c, 303, 327, 4.2, COIN, 1.5);                   // the pocket watch, moonlit
+  seg(c, 303, 327, 303, 324.5, INK, 1);                // its hands: almost time
+  seg(c, 303, 327, 305.5, 327.5, INK, 1);
+  flat(c, 253, 240, 30, 120, stone);                   // the corner column hides his left half
+  seg(c, 283, 240, 283, 360, INK, 2);
 
   // the contrail arc — the flight path OUT the door, swooping across frame
   const qp = (t: number): readonly [number, number] => {
@@ -1255,16 +1259,14 @@ const sceneGrandEscape: SceneFn = (c, frame) => {
     poly(c, [[gx + 30 + i * 3.4 - 1.2, gy - 57], [gx + 30 + i * 3.4 + 1.2, gy - 57], [gx + 30 + i * 3.4, gy - 52.5]], '#e8e4d4', 1.5);
   }
 
-  // THE royal goodbye: her one oversized glove (rig hands hidden), waving —
-  // full chain from her shoulder, per the attachment rule
+  // THE royal goodbye: her fake costume glove (rig hands hidden), waving over
+  // the shoulder at honest arm's reach — deadpan, not spectacle. The chain
+  // starts at her NEAR puff shoulder (rotate 1.2 of the local puff anchor).
   const wA = Math.sin(frame * 0.11);
-  const wgx = gx + 116, wgy = gy - 94 + wA * 5;
-  // the far shoulder sits just past her lifted head — the sleeve leaves it
-  // without ever crossing the face
-  bigArm(c, gx + 93, gy - 70, wgx, wgy, 15, 0.35 + wA * 0.38, P.peachPink, 6);
+  const [wgx, wgy] = bigArm(c, gx + 60, gy - 86, gx + 54, gy - 104 + wA * 3, 6.5, -0.25 + wA * 0.35, P.peachPink, 5);
   c.strokeStyle = 'rgba(255,255,255,0.35)'; c.lineWidth = 2;    // wave whooshes
-  c.beginPath(); c.arc(wgx, wgy, 26, -1.2 + wA * 0.3, -0.3 + wA * 0.3); c.stroke();
-  c.beginPath(); c.arc(wgx, wgy, 33, -1.0 + wA * 0.3, -0.45 + wA * 0.3); c.stroke();
+  c.beginPath(); c.arc(wgx, wgy, 13, -1.2 + wA * 0.3, -0.3 + wA * 0.3); c.stroke();
+  c.beginPath(); c.arc(wgx, wgy, 18, -1.0 + wA * 0.3, -0.45 + wA * 0.3); c.stroke();
   // and the phone in the NORMAL hand (the contrast IS the joke)
   const phx = gx + 52, phy = gy - 28;
   poly(c, [[gx + 44, gy - 50], [phx - 2, phy - 6], [phx + 4, phy - 8], [gx + 50, gy - 52]], P.peachPink, 2); // dainty arm
@@ -1409,11 +1411,11 @@ const sceneHeroSpeech: SceneFn = (c, frame) => {
     drawToad(c, txp, typ + Math.sin(frame * 0.08 + i) * 2.5, 0.8 + rng() * 0.35,
       { facing: txp < 320 ? 1 : -1, mood: 'adore', spot: spots[i % 5]!, vest: vests[(i + 2) % 5]! });
   }
-  // staffer with the APPLAUSE sign (sign rests on his raised hands)
-  drawToad(c, 86, 346, 1.05, { facing: 1, mood: 'cheer', spot: '#3f8fd0', vest: '#b8862e' });
-  rect(c, 46, 268, 80, 30, '#f4f0e6', 2.5);
-  txt(c, 'APPLAUSE', 86, 284, 11, INK, 'center', false);
-  seg(c, 74, 298, 76, 308, INK, 2); seg(c, 98, 298, 96, 308, INK, 2);
+  // staffer with the APPLAUSE sign — the sign's bottom edge rests ON his
+  // raised hands (they overlap; a gap here read as a floating sign)
+  drawToad(c, 86, 326, 1.05, { facing: 1, mood: 'cheer', spot: '#3f8fd0', vest: '#b8862e' });
+  rect(c, 46, 271, 80, 30, '#f4f0e6', 2.5);
+  txt(c, 'APPLAUSE', 86, 287, 11, INK, 'center', false);
   // the teleprompter cart, wheeled up under the balcony
   rect(c, 496, 268, 64, 30, '#3d3f52', 2.5);
   disc(c, 508, 302, 6, '#20222c', 2); disc(c, 548, 302, 6, '#20222c', 2);  // wheels ON the plaza
@@ -1446,7 +1448,7 @@ const sceneMangianiJoins: SceneFn = (c, frame) => {
   checkerHill(c, 130, 346, 260, 96, '#9cc86e', '#8ab458');
   checkerHill(c, 520, 356, 300, 104, '#8cba62', '#7aa850');
   castleSilhouette(c, 332, 254, 0.45, '#8a7aa4');
-  seg(c, 302, 254, 284, 228, '#6b4420', 4);                 // the prop stick bracing it
+  seg(c, 310, 232, 292, 256, '#6b4420', 4);                 // prop stick: top against the tower, foot on the hill
   txt(c, 'CASTLE (FAR)', 332, 266, 7, '#6d6088', 'center', false);
   cottage(c, 84, 302, 0.7, P.toadRed);
   cottage(c, 148, 300, 0.5, '#3f8fd0');
@@ -1763,10 +1765,10 @@ const sceneBigHands: SceneFn = (c, frame) => {
   seg(c, 430, ay + 18, 424 + lsw, ay + 74, '#c8b088', 2);
   seg(c, 446, ay + 18, 440 + lsw, ay + 74, '#c8b088', 2);
   for (let i = 1; i < 4; i++) seg(c, 428 + lsw * (i / 4), ay + 18 + i * 14, 444 + lsw * (i / 4), ay + 18 + i * 14, '#c8b088', 2.5);
-  // Impeach AT the railing, leaning over — hands hidden: the colossal hand
-  // below is her one oversized hand this panel (never both), and it is drawn
-  // as a FULL ARM CHAIN from her shoulder, over the railing, off the hull.
-  drawImpeach(c, 444, ay - 20, 0.8, { facing: -1, hands: 'hidden', mouth: 'open', waveT: frame });
+  // Impeach AT the railing, waving with the fake costume glove at honest
+  // arm's reach — the hand gag is DEADPAN now: the glove is obviously fake
+  // padding, and the comic INSET below does the pointing.
+  drawImpeach(c, 444, ay - 20, 0.8, { facing: -1, hands: 'wave', mouth: 'open', waveT: frame });
   for (let i = 0; i < 6; i++) seg(c, 396 + i * 40, ay - 24, 396 + i * 40, ay - 44, '#4a2f14', 3); // railing posts
   seg(c, 390, ay - 44, 600, ay - 44, '#4a2f14', 3);
   txt(c, 'HELLO LITTLE PEOPLE', 470, ay - 106, 13, '#fff');
@@ -1783,20 +1785,36 @@ const sceneBigHands: SceneFn = (c, frame) => {
     }
   }
   seg(c, 0, 286, VIEW_W, 286, '#8a8494', 2.5);
-  // THE HAND — it owns the lower-left third, but it is unmistakably HERS:
-  // shoulder -> sleeve crossing the railing and the hull edge -> cuff -> glove
-  // (drawn after the fence so nothing etches over the white).
-  const wob = Math.sin(frame * 0.08);
-  bigArm(c, 434, ay - 70, 300, 248 + wob * 8, 54, -0.22 + wob * 0.07, P.peachPink, 8);
-  // witnesses: Mangiani measuring, two toads doing the arithmetic too
+  // witnesses: Mangiani stretches his measuring tape between his own hands,
+  // eyes locked on the distant glove; two toads do the arithmetic too
   drawMangiani(c, 110, 356, 1.15, { facing: 1, eyes: 'narrow', brows: 'worried', mouth: 'grim', pose: 'measure', backpack: true });
-  seg(c, 148, 266, 252, 286, COIN, 3);                       // the tape, stretched to the glove's edge
-  rect(c, 132, 262, 16, 12, '#3d3f52', 2);                   // tape case in his hand
-  txt(c, 'hand: 40 cm ?!', 150, 224, 11, INK, 'left', false); // the canon figure — FORTY
+  seg(c, 79, 287, 146, 274, COIN, 3);                        // the tape, held at BOTH ends
+  rect(c, 139, 268, 16, 12, '#3d3f52', 2);                   // its case in the forward hand
   drawToad(c, 548, 352, 0.95, { facing: -1, mood: 'shock', spot: '#3f8fd0' });
   drawToad(c, 596, 356, 0.85, { facing: -1, mood: 'despair', spot: '#e08a2e' });
-  // FOREGROUND: a wisp of cloud slides under the hand for depth
-  ell(c, 180 + Math.sin(frame * 0.02) * 10, 262, 90, 12, 'rgba(255,255,255,0.5)', 0);
+  // the dashed sight line from his stare THROUGH the inset to the real glove
+  const wgx2 = 444 - 26.4, wgy2 = ay - 79.2 + Math.sin(frame * 0.12) * 3.2;
+  c.setLineDash([5, 7]);
+  seg(c, 128, 244, wgx2 - 6, wgy2 + 6, 'rgba(27,16,48,0.4)', 2);
+  c.setLineDash([]);
+  // THE COMIC INSET — a pinned magnifier does the pointing now (the hand gag
+  // is deadpan): the fake glove close-up, its stitches, and the canon number.
+  const inX = 252, inY = 150, inR = 64;
+  disc(c, inX, inY, inR + 6, '#f4f0e6', 3);                  // paper rim
+  c.save();
+  c.beginPath(); c.arc(inX, inY, inR, 0, Math.PI * 2); c.clip();
+  flat(c, inX - inR, inY - inR, inR * 2, inR * 2, '#a8d4ee'); // magnified sky
+  // the glove close-up: its sleeve exits through the rim (the rim occludes
+  // the rest of the arm — the chain continues outside the view)
+  bigHand(c, inX + 8, inY - 2, 30, 0.3, 70);
+  seg(c, inX - 52, inY + 40, inX + 52, inY + 40, COIN, 4);   // ruler under the glove
+  for (let i = 0; i <= 8; i++) seg(c, inX - 48 + i * 12, inY + 36, inX - 48 + i * 12, inY + 44, '#8a5a00', 2);
+  txt(c, '40 cm ?!', inX, inY + 53, 12, '#b9412f');          // the canon figure — FORTY
+  c.restore();
+  c.beginPath(); c.arc(inX, inY, inR, 0, Math.PI * 2);
+  c.strokeStyle = INK; c.lineWidth = 4; c.stroke();
+  // magnifier handle, angled down toward the investigator
+  seg(c, inX - inR * 0.72, inY + inR * 0.74, inX - inR * 1.12, inY + inR * 1.18, '#6b4420', 9);
   vignette(c, 0.24);
 };
 
@@ -1954,9 +1972,12 @@ const sceneCoffeeBreak: SceneFn = (c, frame) => {
   // the bucket brigade does its best
   const swing = Math.sin(frame * 0.15) * 4;
   drawToad(c, 486, 340, 0.9, { facing: 1, mood: 'despair', spot: '#3f8fd0' });
-  rect(c, 498, 328 + swing * 0.4, 12, 10, '#5f76d8', 2);     // bucket in hand
+  rect(c, 496, 330, 12, 10, '#5f76d8', 2);                   // his bucket set down at his feet
+  seg(c, 496, 331, 500, 336, '#3d3f52', 1.5);                // handle flopped over the rim
   drawToad(c, 540, 348, 0.95, { facing: 1, mood: 'shock', spot: '#3a9a3a' });
-  rect(c, 552, 334 - swing * 0.4, 12, 10, '#5f76d8', 2);
+  // his bucket HANGS from the outstretched hand: handle drawn hand -> rim
+  seg(c, 552.3, 340.4, 555 + swing * 0.4, 345, '#3d3f52', 2);
+  rect(c, 549 + swing * 0.4, 344, 12, 10, '#5f76d8', 2);
   // Mangiani SPRINTING toward the fire, forever — BEHIND the break furniture,
   // which is exactly how much attention Estrada pays him
   const mrx = 30 + ((frame * 2.2) % 560);
@@ -2157,10 +2178,10 @@ const sceneJail: SceneFn = (c, frame) => {
   flat(c, 262, 102, 120, 22, '#8cba62');
   drawMangiani(c, 300, 120, 0.34, { facing: 1, eyes: 'honest', brows: 'raised', mouth: 'smile', pose: 'stand', backpack: false });
   drawPeach(c, 344, 120, 0.36, { facing: -1, pose: 'stand', mood: 'happy' });
-  poly(c, [[312, 94], [318, 94], [315, 104]], '#c8a468', 1.5);  // cones held between them
-  disc(c, 315, 91, 4, '#f7a8c8', 1.5);
-  poly(c, [[327, 94], [333, 94], [330, 104]], '#c8a468', 1.5);
-  disc(c, 330, 91, 4, '#9ed8f7', 1.5);
+  poly(c, [[303, 94], [309, 94], [306, 104]], '#c8a468', 1.5);  // cone tips meet their hands
+  disc(c, 306, 91, 3.6, '#f7a8c8', 1.5);
+  poly(c, [[338.5, 90], [344.5, 90], [341.5, 100]], '#c8a468', 1.5);
+  disc(c, 341.5, 87, 3.6, '#9ed8f7', 1.5);
   c.restore();
   for (let i = 0; i < 4; i++) seg(c, 284 + i * 26, 36, 284 + i * 26, 128, '#20242f', 5);
   seg(c, 258, 82, 386, 82, '#20242f', 5);

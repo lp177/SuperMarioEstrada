@@ -272,8 +272,8 @@ export function skeleton(c: Ctx, x: number, y: number, s: number, o: SkeletonOpt
     seg(c, x + 10 * s, y - 40 * s, x + 20 * s, y - 56 * s, P.bone, 4);  // raised arm bone
     disc(c, x + 20 * s, y - 56 * s, 2.5 * s, P.bone, 2);
     if (pose === 'salute') {
-      rect(c, x + 14 * s, y - 74 * s, 22 * s, 14 * s, '#f4f0e6', 2);    // slip held in the raised hand
-      txt(c, 'BET', x + 25 * s, y - 67 * s, Math.max(7, 7 * s), '#b9412f', 'center', false);
+      rect(c, x + 14 * s, y - 71 * s, 22 * s, 14 * s, '#f4f0e6', 2);    // slip overlapping the raised hand
+      txt(c, 'BET', x + 25 * s, y - 64 * s, Math.max(7, 7 * s), '#b9412f', 'center', false);
     } else {
       // a fan of three cards held in the raised hand
       for (let i = -1; i <= 1; i++) {
@@ -293,20 +293,23 @@ export function skeleton(c: Ctx, x: number, y: number, s: number, o: SkeletonOpt
 }
 
 // ============================================================================
-// THE HANDS. Enormous. White-gloved. Always — and always ATTACHED.
-//
-// THE ATTACHMENT RULE (playtest-enforced; third anchoring-class bug): an
-// oversized glove may NEVER float. Wherever it appears there must be a
-// continuous visual chain BODY -> shoulder -> gown sleeve -> white cuff ->
-// glove, with the arm angle plausibly reaching the glove. Use `bigArm` when
-// the shoulder is in frame; a bare `bigHand` draws its own sleeve stub which
-// must run into the owner's body or behind an occluder/frame edge.
+// THE FAKE GLOVES. Obviously-fake oversized COSTUME gloves, foam-mascot
+// style — at most head-sized (the canonical 40 cm). THE HAND GAG IS DEADPAN,
+// NOT SPECTACLE (playtest-settled after two failures): the joke is visibly
+// fake padding on a bad disguise, noticed and measured by Mangiani while
+// everyone else ignores it. Never draw a hand bigger than her head, never as
+// scenery, and NEVER stretch an arm to place a hand — arms stay anatomically
+// normal (bigArm clamps its reach) and ATTACHED: a continuous chain BODY ->
+// shoulder -> gown sleeve -> cuff band -> glove, with real pixel OVERLAP at
+// every joint (tangent joints read as floating once the ink outlines land).
 // ============================================================================
 
-/** One HUGE white-gloved hand, palm out, fingers up. cx,cy = palm center.
+/** One fake foam costume glove, palm out, fingers up. cx,cy = palm center;
+ *  r = palm radius (cap it near the owner's head size — see drawImpeach).
  *  `sleeve` = length of the built-in pink gown-sleeve stub drawn wrist-down
- *  in the tilted frame (default 1.5*r). Pass 0 ONLY when a full arm chain is
- *  supplied by `bigArm`. */
+ *  in the tilted frame (default 1.5*r); the stub must run into the owner's
+ *  body or behind an occluder/frame edge. Pass 0 ONLY when a full arm chain
+ *  is supplied by `bigArm`. */
 export function bigHand(c: Ctx, cx: number, cy: number, r: number, tilt: number, sleeve = r * 1.5): void {
   c.save();
   c.translate(cx, cy);
@@ -314,50 +317,70 @@ export function bigHand(c: Ctx, cx: number, cy: number, r: number, tilt: number,
   if (sleeve > 0) {
     // the gown sleeve the glove grows out of, flaring toward the body
     poly(c, [
-      [-r * 0.56, r * 0.95], [r * 0.56, r * 0.95],
+      [-r * 0.56, r * 0.6], [r * 0.56, r * 0.6],
       [r * 0.74, r * 0.95 + sleeve], [-r * 0.74, r * 0.95 + sleeve],
     ], P.peachPink, 2.5);
     seg(c, 0, r * 1.15, 0, r * 0.9 + sleeve, 'rgba(0,0,0,0.15)', Math.max(2, r * 0.05)); // fabric fold
   }
-  // white cuff band — the glove is anchored INTO the sleeve, never floating
-  rect(c, -r * 0.62, r * 0.8, r * 1.24, r * 0.52, P.glove, Math.max(2, r * 0.05));
-  ell(c, 0, 0, r, r * 1.1, P.glove);
+  // the padded mitt: fat palm, stubby foam fingers, foam thumb. ALL line
+  // widths scale with r — at honest glove sizes a fixed 2.5px outline turns
+  // the little fingers into a solid ink blob.
+  const lwBig = Math.max(1.5, Math.min(3, r * 0.2));
+  const lwSmall = Math.max(1.1, Math.min(2.5, r * 0.14));
+  ell(c, 0, 0, r, r * 1.1, P.glove, lwBig);
   for (let i = 0; i < 4; i++) {
     const fx = -r * 0.72 + i * (r * 0.48);
-    ell(c, fx, -r * 0.95, r * 0.22, r * 0.55, P.glove, 2.5);
+    ell(c, fx, -r * 0.95, r * 0.22, r * 0.55, P.glove, lwSmall);
   }
-  ell(c, -r * 0.95, r * 0.25, r * 0.5, r * 0.24, P.glove, 2.5); // thumb
-  // palm crease + knuckle stitching (2-tone)
+  ell(c, -r * 0.95, r * 0.25, r * 0.5, r * 0.24, P.glove, lwSmall); // thumb
+  // cuff band LAST so it visibly straps glove onto sleeve (never a gap)
+  rect(c, -r * 0.7, r * 0.66, r * 1.4, r * 0.62, P.glove, lwSmall);
+  seg(c, -r * 0.7, r * 0.97, r * 0.7, r * 0.97, P.gloveShade, lwSmall); // elastic line
+  // foam-costume tells: padding seams; stitch ticks + fill plug only at
+  // sizes where they read as stitching rather than dirt
   c.strokeStyle = P.gloveShade;
-  c.lineWidth = Math.max(2, r * 0.06);
+  c.lineWidth = lwSmall;
   c.beginPath(); c.arc(0, r * 0.15, r * 0.55, Math.PI * 1.15, Math.PI * 1.85); c.stroke();
   c.beginPath(); c.arc(0, r * 0.42, r * 0.62, Math.PI * 1.2, Math.PI * 1.8); c.stroke();
+  if (r >= 10) {
+    for (let i = 0; i < 3; i++) {               // stitch ticks along the palm-base seam
+      const sxx = -r * 0.3 + i * r * 0.3;
+      seg(c, sxx, r * 0.52, sxx + r * 0.1, r * 0.62, P.gloveShade, lwSmall);
+    }
+    disc(c, r * 0.55, r * 0.3, r * 0.12, P.gloveShade, Math.max(1, r * 0.04)); // inflation plug
+  }
   c.restore();
 }
 
-/** THE full arm chain for the glove: a tapered gown sleeve from a shoulder
- *  point ON the owner's body down to the glove's wrist, then the cuffed glove
- *  itself. (sx,sy) = shoulder anchor on the body; (cx,cy) = palm center.
- *  Prefer this over a bare `bigHand` whenever the shoulder is in frame. */
+/** THE full arm chain for the fake glove: a tapered gown sleeve from a
+ *  shoulder point ON the owner's body to the glove, then the cuffed glove.
+ *  (sx,sy) = shoulder anchor on the body; (cx,cy) = requested palm center —
+ *  CLAMPED to a normal arm's reach (never a stretched rubber limb; playtest-
+ *  settled). The sleeve runs all the way UNDER the palm so no pose angle can
+ *  open a gap at the wrist. Returns the actual palm center drawn, so callers
+ *  can attach accessories (whoosh lines, held props) to the real spot. */
 export function bigArm(
   c: Ctx, sx: number, sy: number, cx: number, cy: number, r: number, tilt: number,
   sleeveCol: string = P.peachPink, shoulderW?: number,
-): void {
-  const wx = cx - Math.sin(tilt) * r * 1.05;   // the wrist, just under the cuff
-  const wy = cy + Math.cos(tilt) * r * 1.05;
-  const dx = wx - sx, dy = wy - sy;
-  const len = Math.hypot(dx, dy) || 1;
+): readonly [number, number] {
+  const reach = r * 3.2;                       // anatomical arm, not a crane
+  let dx = cx - sx, dy = cy - sy;
+  let len = Math.hypot(dx, dy) || 1;
+  if (len > reach) {
+    cx = sx + (dx / len) * reach;
+    cy = sy + (dy / len) * reach;
+    dx = cx - sx; dy = cy - sy; len = reach;
+  }
   const px = -dy / len, py = dx / len;         // sleeve cross direction
-  // shoulder-end half width: matches the owner's puff sleeve, so a colossal
-  // hand reads as an arm INFLATING toward the glove, not a fat tube
   const w0 = Math.min(shoulderW ?? r * 0.55, len * 0.45);
-  const w1 = r * 0.6;                          // wrist-end half width, meets the cuff
+  const w1 = r * 0.6;                          // wrist-end half width, hidden under the mitt
   poly(c, [
     [sx - px * w0, sy - py * w0], [sx + px * w0, sy + py * w0],
-    [wx + px * w1, wy + py * w1], [wx - px * w1, wy - py * w1],
+    [cx + px * w1, cy + py * w1], [cx - px * w1, cy - py * w1],
   ], sleeveCol, 2.5);
-  seg(c, sx + dx * 0.18, sy + dy * 0.18, wx - dx * 0.12, wy - dy * 0.12, 'rgba(0,0,0,0.14)', 2); // fabric fold
+  seg(c, sx + dx * 0.18, sy + dy * 0.18, cx - dx * 0.3, cy - dy * 0.3, 'rgba(0,0,0,0.14)', 2); // fabric fold
   bigHand(c, cx, cy, r, tilt, 0);              // the arm IS the sleeve — no stub
+  return [cx, cy];
 }
 
 // ============================================================================
@@ -423,9 +446,11 @@ export function drawEstrada(c: Ctx, x: number, y: number, s: number, o: EstradaO
       [x + f * 26 * s, shY - 22 * s], [x + f * 18 * s, shY + 8 * s]], P.estradaRed, 2);
     gloveHand(c, x + f * 23 * s, shY - 26 * s, 6 * s); // fist up
   } else if (arms === 'shrug') {
-    poly(c, [[x - 14 * s, shY + 6 * s], [x - 28 * s, shY - 6 * s], [x - 30 * s, shY], [x - 15 * s, shY + 11 * s]], P.estradaRed, 2);
-    poly(c, [[x + 14 * s, shY + 6 * s], [x + 28 * s, shY - 6 * s], [x + 30 * s, shY], [x + 15 * s, shY + 11 * s]], P.estradaRed, 2);
-    ell(c, x - 30 * s, shY - 6 * s, 5.5 * s, 4.5 * s, P.glove, 2); // palms up
+    // arm quads run PAST the palm centers — a palm tangent to the arm tip
+    // reads as floating once both ink outlines land (playtest-caught)
+    poly(c, [[x - 14 * s, shY + 6 * s], [x - 31 * s, shY - 8 * s], [x - 33 * s, shY - 1 * s], [x - 15 * s, shY + 11 * s]], P.estradaRed, 2);
+    poly(c, [[x + 14 * s, shY + 6 * s], [x + 31 * s, shY - 8 * s], [x + 33 * s, shY - 1 * s], [x + 15 * s, shY + 11 * s]], P.estradaRed, 2);
+    ell(c, x - 30 * s, shY - 6 * s, 5.5 * s, 4.5 * s, P.glove, 2); // palms up, overlapping the arm tips
     ell(c, x + 30 * s, shY - 6 * s, 5.5 * s, 4.5 * s, P.glove, 2);
   } else if (arms === 'stamp') {
     rect(c, x - f * 20 * s, shY, 6 * s, 22 * s, P.estradaRed, 2);
@@ -540,11 +565,11 @@ export function drawEstrada(c: Ctx, x: number, y: number, s: number, o: EstradaO
 
 export interface ImpeachOpts {
   facing?: 1 | -1;
-  /** 'hidden' = no oversized hand from the rig (a scene-composed hand takes
-   *  over — compose it with `bigArm` from her shoulder; never draw both). */
+  /** 'hidden' = no fake glove from the rig (a scene-composed one takes over —
+   *  compose it with `bigArm` from her shoulder; never draw both). */
   hands?: 'wave' | 'coffee-wave' | 'phone' | 'chalk' | 'down' | 'hidden';
-  /** 1 = merely huge. Rig-capped at 1.7 (~1.6x her head): the gag is a hand
-   *  comically too big for the body, not a parade balloon. */
+  /** 1 = the standard fake costume glove. Rig-capped so the glove never
+   *  exceeds her head — the gag is deadpan fake padding, not spectacle. */
   handScale?: number;
   waveT?: number;        // animation clock for the wave + hair wisp
   mouth?: 'smug' | 'open' | 'pout';
@@ -553,7 +578,8 @@ export interface ImpeachOpts {
 
 export function drawImpeach(c: Ctx, x: number, y: number, s: number, o: ImpeachOpts = {}): void {
   const f = o.facing ?? 1;
-  const hs = Math.min(o.handScale ?? 1, 1.7) * 14 * s;   // palm radius — the running gag, capped
+  // palm radius of the fake costume glove — capped at ~head size (40 cm canon)
+  const hs = Math.min(o.handScale ?? 1, 1.15) * 9 * s;
   const wt = o.waveT ?? 0;
   const hands = o.hands ?? 'wave';
   const mouth = o.mouth ?? 'pout';
@@ -666,11 +692,11 @@ export function drawImpeach(c: Ctx, x: number, y: number, s: number, o: ImpeachO
   poly(c, [[-5 * s, 0], [5 * s, 0], [5 * s, -5 * s], [2.5 * s, -2.5 * s], [0, -6 * s], [-2.5 * s, -2.5 * s], [-5 * s, -5 * s]], COIN, 2);
   disc(c, 0, -1.5 * s, 0.8 * s, '#e04848', 0);
   c.restore();
-  // THE HAND. Enormous, white-gloved — and exactly ONE oversized hand per
-  // appearance: the gag is composed, never duplicated. The other arm stays
-  // modest (dainty, even — the contrast IS the joke) or tucked away.
-  // Every mode routes through `bigArm`: shoulder -> sleeve -> cuff -> glove,
-  // one continuous chain (the attachment rule).
+  // THE FAKE GLOVE. Obviously padded costume foam, at most head-sized — and
+  // exactly ONE per appearance: the gag is composed, never duplicated. The
+  // other arm stays modest (dainty, even — the contrast IS the joke) or
+  // tucked away. Every mode routes through `bigArm`: shoulder -> sleeve ->
+  // cuff -> glove, one continuous chain at anatomical reach.
   const armCol = P.peachPink;
   const shX = x + f * 13 * s, shY2 = y - 62 * s;   // the puff-sleeve shoulder anchor
   /** The modest second arm: pink sleeve down to a normal-sized glove. */
@@ -698,9 +724,9 @@ export function drawImpeach(c: Ctx, x: number, y: number, s: number, o: ImpeachO
     seg(c, x + f * 30 * s, y - 78 * s, x + f * 34 * s, y - 86 * s, '#fff', 4); // chalk pinched in the fingers
     smallArm(x - f * 20 * s, y - 44 * s);
   } else if (hands === 'down') {
-    // one big glove resting at the gown's side (clear of the tie); the other
-    // hand tucked behind the skirt (the one-oversized-hand rule)
-    bigArm(c, shX, shY2, x + f * 29 * s, y - 30 * s, hs * 0.95, f * 0.35);
+    // the fake glove resting at the gown's side (clear of the tie); the other
+    // hand tucked behind the skirt (the one-fake-glove rule)
+    bigArm(c, shX, shY2, x + f * 26 * s, y - 38 * s, hs * 0.95, f * 0.35);
   }
   // hands === 'hidden': both arms behind the gown — the scene composes its
   // own single dramatic hand instead.
@@ -722,9 +748,12 @@ export function drawBowsonaro(c: Ctx, x: number, y: number, s: number, o: Bowson
   const pose = o.pose ?? 'stand';
   const mouth = o.mouth ?? 'grin';
   const hy = y - 62 * s;
-  // legs + army boots (beret up top, boots below — the uniform)
-  rect(c, x - 14 * s, y - 18 * s, 10 * s, 14 * s, P.turtSkin, 2.5);
-  rect(c, x + 4 * s, y - 18 * s, 10 * s, 14 * s, P.turtSkin, 2.5);
+  // legs + army boots (beret up top, boots below — the uniform). The thighs
+  // run all the way up UNDER the shell rim / torso: a leg that starts below
+  // the shell reads as a floating body part the moment nothing covers the
+  // waist (playtest-caught in the staged-kidnap panel).
+  rect(c, x - 14 * s, y - 29 * s, 10 * s, 25 * s, P.turtSkin, 2.5);
+  rect(c, x + 4 * s, y - 29 * s, 10 * s, 25 * s, P.turtSkin, 2.5);
   seg(c, x - 11 * s, y - 14 * s, x - 7 * s, y - 14 * s, P.turtSkinDark, 1.5); // scale lines
   seg(c, x + 7 * s, y - 14 * s, x + 11 * s, y - 14 * s, P.turtSkinDark, 1.5);
   ell(c, x - 9 * s, y - 3 * s, 8.5 * s, 4.5 * s, '#2c3024', 2);
@@ -1046,15 +1075,18 @@ export function drawPeach(c: Ctx, x: number, y: number, s: number, o: PeachOpts 
     poly(c, [[x + f * 6 * s, gownTop - 6 * s], [x + f * 22 * s, y - 56 * s], [x + f * 21 * s, y - 50 * s], [x + f * 6 * s, y - 58 * s]], P.peachPink, 2);
     disc(c, x + f * 24 * s, y - 54 * s, 3.5 * s, P.skin, 2);
   } else if (o.holding === 'cards') {
-    // both hands raised in front holding a fan of cards
-    poly(c, [[x - 6 * s, gownTop - 6 * s], [x - 14 * s, gownTop - 14 * s], [x - 10 * s, gownTop - 17 * s], [x - 3 * s, gownTop - 8 * s]], P.peachPink, 2);
-    disc(c, x - f * 11 * s, gownTop - 16 * s, 3.2 * s, P.skin, 2);
-    for (let i = -2; i <= 1; i++) {   // the fan, held in that hand
-      c.save(); c.translate(x - f * 10 * s, gownTop - 18 * s); c.rotate(i * 0.26 * f);
+    // one hand raised BESIDE the head (clear of the face, never behind it —
+    // a fan floating over the head reads detached) holding the card fan;
+    // the hand disc goes on top of the card bases so it visibly grips them
+    const chx = x - f * 16 * s, chy = gownTop - 10 * s;
+    poly(c, [[x - f * 5 * s, gownTop - 4 * s], [chx + f * 2 * s, chy + 2 * s], [chx - f * 2 * s, chy - 2 * s], [x - f * 8 * s, gownTop - 7 * s]], P.peachPink, 2);
+    for (let i = -2; i <= 1; i++) {   // the fan spreads UP from the grip
+      c.save(); c.translate(chx, chy - 2 * s); c.rotate(i * 0.26 * f);
       rect(c, -4.5 * s, -15 * s, 9 * s, 14 * s, '#f4f0e6', 1.5);
       disc(c, 0, -8 * s, 1.4 * s, (i % 2 === 0) ? P.toadRed : INK, 0);
       c.restore();
     }
+    disc(c, chx, chy, 3.2 * s, P.skin, 2);
   } else {
     disc(c, x - 6 * s, gownTop + 4 * s, 3.5 * s, P.skin, 2);
     disc(c, x + 6 * s, gownTop + 4 * s, 3.5 * s, P.skin, 2);
@@ -1214,8 +1246,21 @@ export function drawToad(c: Ctx, x: number, y: number, s: number, o: ToadOpts = 
   disc(c, x, hy - 15 * s, 3.6 * s, spot, 1.5);
   c.restore();
   // props (always held or worn — nothing floats)
-  if (o.coin) coin(c, x + f * 14 * s, y - 20 * s, 5 * s);  // clutched in the outstretched arm
+  if (o.coin) {
+    // clutched in whichever hand this mood actually raised (attachment rule:
+    // the prop position derives from the same joint that drew the arm)
+    const [chx, chy] = (mood === 'cheer' || mood === 'adore')
+      ? [x + f * 15 * s, y - 25 * s]           // the raised hand
+      : mood === 'despair'
+        ? [x + f * 9 * s, hy - 6 * s]          // pressed to the head
+        : [x + f * 14 * s, y - 10 * s];        // the outstretched low hand
+    coin(c, chx, chy, 5 * s);
+  }
   if (o.camera) {
+    // an arm goes UP to hold the camera at eye level (hand drawn first so the
+    // camera body overlaps it — gripped, never floating)
+    seg(c, x + f * 8 * s, y - 14 * s, x + f * 12 * s, hy + 3 * s, P.toadSkin, 3.5 * s);
+    disc(c, x + f * 12 * s, hy + 3.5 * s, 2.2 * s, P.toadSkin, 1.5);
     rect(c, x + f * 10 * s, hy - 4 * s, 12 * s, 9 * s, '#3d3f52', 2);
     disc(c, x + f * 16 * s, hy + 0.5 * s, 3 * s, '#8fd8ff', 1.5);
     disc(c, x + f * 12 * s, hy - 6 * s, 1.5 * s, '#f4f0e6', 1); // flash bulb
