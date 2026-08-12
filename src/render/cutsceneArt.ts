@@ -564,11 +564,12 @@ const sceneBetShop: SceneFn = (c, frame) => {
     const x0 = 88 + i * 130, x1 = 218 + i * 130;
     c.beginPath(); c.moveTo(x0, 270); c.quadraticCurveTo((x0 + x1) / 2, 290, x1, 270); c.stroke();
   }
-  // sight gag: a foreclosure notice already on the wall, day one
+  // sight gag: the house policy, nailed up on day one (the shop wrote it —
+  // the one sign in the parlor that tells the truth)
   c.save(); c.translate(318, 244); c.rotate(-0.05);
   rect(c, -26, -16, 52, 32, '#f4f0e6', 2);
-  txt(c, 'SOON:', 0, -7, 8, '#b9412f', 'center', false);
-  txt(c, 'FORECLOSED', 0, 5, 8, '#b9412f', 'center', false);
+  txt(c, 'NO', 0, -7, 8, '#b9412f', 'center', false);
+  txt(c, 'REFUNDS', 0, 5, 8, '#b9412f', 'center', false);
   c.restore();
   txt(c, 'ALL BETS CERTIFIED BY A REAL ROYAL NOTARY', 320, 350, 11, '#cbb8ff');
   vignette(c, 0.30);
@@ -1013,11 +1014,12 @@ const sceneStagedKidnap: SceneFn = (c, frame) => {
 
 // --- w1/w2/w3 world-end opener: THE GRAND ESCAPE -------------------------------
 // The biggest set-piece in the game. Night over the just-"raided" castle:
-// Bowsonaro rockets away on a jetpack with the princess under one arm, a
-// banner in tow and the kingdom's paperwork raining out of the contrail.
+// Bowsonaro rockets away with the princess under one arm on a sleek white
+// billionaire-launch booster — gift-wrapped, bow and tag, no further comment —
+// while the kingdom's paperwork rains out of the contrail.
 const sceneGrandEscape: SceneFn = (c, frame) => {
   // the whole getaway breathes on one gentle bob — everything strapped to the
-  // jetpack (glove, phone, banner rope, coin leak, shoe drop) shares it
+  // booster (glove, phone, gift tag, coin leak, shoe drop) shares it
   const bob = Math.sin(frame * 0.06) * 3;
   const gx = 310, gy = 225 + bob;               // Bowsonaro's feet anchor, mid-air
 
@@ -1180,18 +1182,36 @@ const sceneGrandEscape: SceneFn = (c, frame) => {
     seg(c, lx, ly, lx - 30, ly + 11, 'rgba(255,255,255,0.16)', 2);
   }
 
-  // THE GETAWAY. Jetpack first (his back), then the princess, then the boss.
+  // THE GETAWAY. Booster first (his back), then the princess, then the boss.
+  // The escape vehicle is a sleek billionaire-launch booster — white hull,
+  // black nose tip, grid fins, fold-out legs, chrome trim: the news-photo
+  // silhouette — gift-wrapped. Who sends a man a rocket is on the tag.
   c.save();
   c.translate(gx, gy);
   c.rotate(-0.14);                                     // nose up, climbing right
-  rect(c, -50, -66, 26, 46, '#565d78', 2.5);           // the tank, strapped over the shell
-  c.beginPath(); c.arc(-37, -66, 13, Math.PI, 0); c.closePath();
-  c.fillStyle = '#565d78'; c.fill(); c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
-  flat(c, -46, -62, 6, 40, 'rgba(255,255,255,0.16)');  // metal sheen
-  disc(c, -37, -48, 2, '#31294e', 1);                  // rivets
-  disc(c, -37, -32, 2, '#31294e', 1);
-  seg(c, -24, -56, -4, -50, '#3d3f52', 4);             // straps to the shell
-  seg(c, -24, -32, -6, -28, '#3d3f52', 4);
+  rect(c, -50, -66, 26, 46, '#eef1f4', 2.5);           // gleaming white hull, strapped over the shell
+  flat(c, -30, -64, 5, 42, 'rgba(90,104,132,0.20)');   // rolled-metal shade, right
+  flat(c, -47, -63, 4, 40, 'rgba(255,255,255,0.8)');   // specular streak, left
+  c.beginPath(); c.arc(-37, -66, 13, Math.PI, 0); c.closePath();  // the black nose tip
+  c.fillStyle = '#23242e'; c.fill(); c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
+  seg(c, -44, -71, -40, -75, 'rgba(200,215,235,0.7)', 2);         // nose glint
+  flat(c, -50, -67, 26, 3.5, '#c9d4de');               // chrome collar under the nose
+  seg(c, -50, -63.5, -24, -63.5, '#8a94a4', 1.5);
+  const gridFin = (fx: number): void => {              // grid fins, folded out (lattice)
+    rect(c, fx, -63, 7, 8, '#b9c2cc', 1.5);
+    seg(c, fx + 3.5, -61.5, fx + 3.5, -56.5, '#5a6474', 1);
+    seg(c, fx + 1.4, -59, fx + 5.6, -59, '#5a6474', 1);
+  };
+  gridFin(-56);                                        // roots overlap the hull edges
+  gridFin(-25);
+  seg(c, -47, -22, -56, -11, '#8a94a4', 2.5);          // tiny fold-out landing legs (moonlit)
+  seg(c, -44, -21, -51, -14, '#aab4c4', 1.5);          //   piston strut
+  seg(c, -59, -10.5, -53.5, -10.5, '#6a7488', 3);      //   foot pad
+  seg(c, -27, -22, -18, -11, '#8a94a4', 2.5);
+  seg(c, -30, -21, -23, -14, '#aab4c4', 1.5);
+  seg(c, -20.5, -10.5, -15, -10.5, '#6a7488', 3);
+  seg(c, -27, -56, -4, -50, '#3d3f52', 4);             // straps to the shell
+  seg(c, -27, -32, -6, -28, '#3d3f52', 4);
   poly(c, [[-46, -20], [-28, -20], [-24, -10], [-50, -10]], '#3a3f52', 2.5); // nozzle
   // the flame cone, roaring
   const fl = 40 + Math.sin(frame * 0.4) * 7 + Math.sin(frame * 0.17) * 4;
@@ -1214,11 +1234,33 @@ const sceneGrandEscape: SceneFn = (c, frame) => {
   seg(c, -50, -50, -46, -48, '#5c4322', 3);            // its strap onto the tank
   txt(c, '$', -56, -43, 9, INK, 'center', false);
   seg(c, -61, -36, -52, -34, '#7c5a14', 2.5);          // the burst seam
-  // the rental tag they never removed (tied to a strap bolt)
-  seg(c, -37, -68, -33, -76, '#c8b088', 1.5);
-  c.save(); c.translate(-32, -80); c.rotate(0.22 + Math.sin(frame * 0.05) * 0.08);
-  rect(c, -12, -6, 24, 12, '#e8d5a0', 1.5);
-  txt(c, 'RENTAL', 0, 0, 6, '#6b4420', 'center', false);
+  // THE GIFT DRESSING — a red ribbon wrapped around the hull with a big bow.
+  // No caption anywhere: the bow, the tag, the reader does the rest.
+  flat(c, -50, -53, 26, 6, '#c8283c');                 // ribbon band around the cylinder
+  seg(c, -50, -53, -24, -53, '#8e1626', 1.5);
+  seg(c, -50, -47, -24, -47, '#8e1626', 1.5);
+  poly(c, [[-34, -50], [-47, -62], [-50, -50], [-41, -44]], '#e04658', 2);   // bow loop, left (tall)
+  poly(c, [[-34, -50], [-26, -60], [-23, -51], [-29, -45]], '#e04658', 2);   // bow loop, right (tucked
+  seg(c, -45, -57, -47, -52, 'rgba(255,255,255,0.5)', 1.5);                  //  behind the shell)
+  poly(c, [[-34, -50], [-42, -40], [-45, -33], [-39, -35], [-36, -42]], '#c8283c', 2); // tail, notched
+  poly(c, [[-34, -50], [-28, -41], [-27, -34], [-24, -39], [-29, -46]], '#c8283c', 2); // tail, notched
+  disc(c, -34, -50, 4, '#a81c30', 2);                  // the knot
+  disc(c, -35.2, -51.2, 1.2, 'rgba(255,255,255,0.4)', 0);
+  seg(c, -41, -30, -34, -23, '#8a94a4', 2);            // one tiny stenciled X on the hull —
+  seg(c, -34, -30, -41, -23, '#8a94a4', 2);            // the manufacturer's mark, nothing more
+  // the gift tag, streaming from the knot in the slipstream (string is drawn
+  // to the tag's eyelet, then the tag over the string end: always attached)
+  const tagA = -0.34 + Math.sin(frame * 0.05) * 0.12;
+  const tagCx = -63 + Math.sin(frame * 0.05 + 1.3) * 1.5, tagCy = -87;
+  const eyeX = tagCx + Math.cos(tagA) * 20 - Math.sin(tagA) * 6;
+  const eyeY = tagCy + Math.sin(tagA) * 20 + Math.cos(tagA) * 6;
+  c.strokeStyle = '#c8b088'; c.lineWidth = 1.5;
+  c.beginPath(); c.moveTo(-34, -52); c.quadraticCurveTo(-58, -62, eyeX, eyeY); c.stroke();
+  c.save(); c.translate(tagCx, tagCy); c.rotate(tagA);
+  rect(c, -22, -9, 44, 18, '#f4f0e6', 1.5);
+  disc(c, 20, 6, 1.6, '#c8b088', 1);                   // punched eyelet over the string end
+  txt(c, 'To: Donald', -1, -3.5, 5.5, '#6b4420', 'center', false);
+  txt(c, 'From: Elon ♥', -1, 4.5, 5.5, '#6b4420', 'center', false);
   c.restore();
   c.restore();
 
@@ -1276,29 +1318,6 @@ const sceneGrandEscape: SceneFn = (c, frame) => {
   flat(c, -3.5, -7, 7, 13, '#8fd8ff');
   c.restore();
   sparkle(c, phx + 12, phy - 2, 3, frame, 2.6);        // a notification, mid-flight
-
-  // the towed banner — rope VISIBLY knotted to the jetpack dome
-  const rx0 = gx - 48, ry0 = gy - 73;
-  const flap = Math.sin(frame * 0.07);
-  const bnx = 192, bny = 116 + flap * 4;               // the banner's rope-end edge
-  c.strokeStyle = '#c8b088'; c.lineWidth = 2;
-  c.beginPath(); c.moveTo(rx0, ry0);
-  c.quadraticCurveTo((rx0 + bnx) / 2, (ry0 + bny) / 2 + 16 + flap * 3, bnx, bny);
-  c.stroke();
-  disc(c, rx0, ry0, 2.5, '#c8b088', 1);                // the knot
-  const rip = (k: number): number => Math.sin(frame * 0.09 + k) * 4;
-  poly(c, [                                            // cloth, torn at the trailing edge
-    [bnx, bny - 22 + rip(0)], [bnx, bny + 14 + rip(0.6)],
-    [66, bny + 22 + rip(1.8)], [76, bny + 10 + rip(2.2)], [58, bny + 2 + rip(2.6)],
-    [72, bny - 8 + rip(3.0)], [60, bny - 18 + rip(3.4)],
-  ], '#f0e8d0', 2.5);
-  c.save();                                            // the message, in wobbly paint
-  c.translate((bnx + 64) / 2, bny - 2 + rip(1));
-  c.rotate(-0.03 + flap * 0.025);
-  txt(c, 'NOT A', 0, -8, 11, '#b9412f', 'center', false);
-  txt(c, 'KIDNAPPING', 0, 6, 11, '#b9412f', 'center', false);
-  seg(c, 24, 11, 25, 18, '#b9412f', 2);                // a paint drip off the G
-  c.restore();
 
   // coins leaking from the burst bag, trickling down toward the kingdom
   for (let i = 0; i < 6; i++) {
@@ -1968,7 +1987,10 @@ const sceneCoffeeBreak: SceneFn = (c, frame) => {
   c.beginPath(); c.moveTo(314, 292); c.quadraticCurveTo(360, 320, 392, 310);
   c.lineTo(398, 322); c.quadraticCurveTo(430, 330, 470, 318); c.stroke();
   seg(c, 392, 306, 400, 326, '#7c2230', 5);                  // THE kink
-  txt(c, '(kink)', 396, 342, 8, '#7c2230', 'center', false);
+  seg(c, 469, 317, 474, 324, COIN_DARK, 5);                  // brass nozzle, drooping limp
+  const dripT2 = (frame * 0.02) % 1;                         // its entire output: one drop
+  disc(c, 474, 325 + dripT2 * 10, 1.6, '#7fb7d9', 0);        // at a time, into a sad puddle
+  ell(c, 474, 337, 6, 2, 'rgba(110,160,200,0.5)', 0);        // the despairing toad watches it
   // the bucket brigade does its best
   const swing = Math.sin(frame * 0.15) * 4;
   drawToad(c, 486, 340, 0.9, { facing: 1, mood: 'despair', spot: '#3f8fd0' });

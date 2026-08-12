@@ -60,8 +60,8 @@ function fillSky(ctx: CanvasRenderingContext2D, stops: readonly (readonly [numbe
 // boom mic that dips into the top of frame and slowly retracts on a fixed
 // deterministic cycle. Everything stays SUBTLE at parallax distance and
 // escalates meadow -> sewer -> casino -> castle — by the castle they stopped
-// trying and a spare backdrop panel stenciled 'CASTLE (PROP)' just hangs
-// there, askew.
+// trying and a spare RENTED backdrop panel just hangs there, askew, the hire
+// company's 'RENT-A-CASTLE' brand still stenciled across the face.
 //
 // SINCERE ZONE: the sewer's barred-door cameo (the real Peach's dungeon) is
 // NOT a set. No gag renders within CAMEO_CLEAR px of a cameo center —
@@ -310,8 +310,12 @@ function drawCurlCorner(ctx: CanvasRenderingContext2D, spec: DressingSpec): void
   ctx.stroke();
 }
 
-/** Castle only: they stopped trying. A spare backdrop panel stenciled
- *  'CASTLE (PROP)' hangs askew from two ropes — one of them slipped. */
+/** Castle only: they stopped trying. A spare RENTED backdrop panel hangs
+ *  askew from two ropes — one of them slipped — with the hire company's
+ *  'RENT-A-CASTLE' stencil still on the face (rental houses brand their
+ *  stock; nobody here bothered to paint it out). AUTHORSHIP RULE: the old
+ *  'CASTLE (PROP)' stencil explained the joke; a rental brand has an
+ *  author with a motive. */
 function drawPropPanel(ctx: CanvasRenderingContext2D, oxFar: number, frame: number): void {
   tiled(oxFar, 1150, 220, (sx, i) => {
     const h = hash01(i * 211 + 13);
@@ -345,12 +349,12 @@ function drawPropPanel(ctx: CanvasRenderingContext2D, oxFar: number, frame: numb
     for (let c = 0; c < 4; c++) ctx.fillRect(-32 + c * 18, -28, 9, 6);
     ctx.fillStyle = '#4f4a58';
     ctx.fillRect(-8, 0, 16, 22); // roughly centered, roughly a door
-    // the stencil, spray-through, not even straight
+    // the rental house's stencil, spray-through, not even straight
     ctx.fillStyle = 'rgba(30,24,28,0.8)';
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('CASTLE (PROP)', 2, 34);
+    ctx.fillText('RENT-A-CASTLE', 2, 34);
     ctx.restore();
   });
 }

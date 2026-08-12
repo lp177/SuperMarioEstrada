@@ -64,6 +64,17 @@ Original art and music only: parody the *genre*, never copy Nintendo assets,
 sprites, names ("Estrada", "Mangiani", "Impeach", "Bowsonaro" are the names) or
 melodies.
 
+**THE AUTHORSHIP RULE for written text (settled, playtest-driven).** Every
+string painted into the world must have an in-fiction AUTHOR with a rational
+motive for writing it. Legitimate: ad copy ("IMPOSSIBLE TO LOSE!"), spin
+("MISSION FAILED SUCCESSFULLY" — Estrada reframing), taunts (Bowsonaro's door
+notes), private planning notes ("WIG GLUE"), process artifacts (clapperboards,
+price tags — a lazy crew plausibly leaves those). BANNED: denials of the
+obvious ("NOT A KIDNAPPING", "TOTALLY A BIRD" class) — nobody writes those;
+they explain the joke instead of being one. When tempted, replace the label
+with PHYSICAL storytelling the viewer infers (the Elon-gift rocket model: a
+bow and a "To: Donald / From: Elon" tag beat any banner).
+
 **Sprinkle real scandals and catchphrases** into dialogue, excuse lines, decor
 text and boss barks — occasionally, as seasoning, never wall-to-wall. Impeach:
 "fake news", "witch hunt", "many people are saying", "a very stable genius",

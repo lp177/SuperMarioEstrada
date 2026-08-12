@@ -1193,7 +1193,10 @@ const ENEMY_SKIN: Record<EnemyKind, Record<ThemeId, SkinDraw>> = {
       disc(ctx, -5, -3, 1.2, '#c22e2e'); // REC lamp
       ctx.restore();
     },
-    // 'TOTALLY A BIRD' surveillance drone — TELL: the sign says so.
+    // Surveillance drone in a bird costume: cardboard beak, googly eye —
+    // TELL: craft feathers gaffer-taped on at angles no wing ever grew,
+    // one moulting off mid-hover. Nobody writes "bird" on a drone; the
+    // AUTHORSHIP RULE says the feathers do the pleading (physically).
     sewer: (ctx, e) => {
       droneRotors(ctx, e);
       orect(ctx, -8, -5, 16, 10, '#565a68');
@@ -1202,16 +1205,28 @@ const ENEMY_SKIN: Record<EnemyKind, Record<ThemeId, SkinDraw>> = {
       ctx.fillRect(6, -3, 3, 6);
       disc(ctx, 2, -1, 2.5, '#ffffff', OUT); // googly eye
       disc(ctx, 2.7, -0.4, 1, OUT);
-      ctx.strokeStyle = OUT; // TELL: the sworn statement, on strings
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(-4, 5);
-      ctx.lineTo(-3, 9);
-      ctx.moveTo(4, 5);
-      ctx.lineTo(3, 9);
-      ctx.stroke();
-      orect(ctx, -9, 9, 18, 8, '#e6d9a8');
-      txt(ctx, 'A BIRD', 0, 13.5, 4, OUT);
+      // TELL: two craft feathers taped where a wing vaguely goes — static
+      // (taped things do not flap), fanned like the casino wings' cheap kin
+      ctx.save();
+      ctx.translate(-5, -3);
+      ctx.rotate(-0.55);
+      tri(ctx, 0, 0, -11, -5, -3, 3, '#e0aa2f', OUT);
+      ctx.restore();
+      ctx.save();
+      ctx.translate(-3, -2);
+      ctx.rotate(0.05);
+      tri(ctx, 0, 0, -9, -4, -2, 3, '#c9932e', OUT);
+      ctx.restore();
+      ctx.fillStyle = '#b8b2a6'; // the tape pinning the quills
+      ctx.fillRect(-7, -4.5, 5, 2.5);
+      // one feather mid-moult, swinging on a curl of tape
+      ctx.save();
+      ctx.translate(-2, 5);
+      ctx.rotate(Math.sin(e.animT / 9) * 0.35);
+      ctx.fillStyle = '#b8b2a6';
+      ctx.fillRect(-1, 0, 2, 3); // the strip, barely holding
+      tri(ctx, -3, 11, 3, 11, 0, 3, '#e0aa2f', OUT);
+      ctx.restore();
     },
     // Winged security camera — TELL: cardboard wings, gaffer-taped on.
     casino: (ctx, e) => {
@@ -2889,12 +2904,15 @@ export function drawGoal(ctx: Ctx, level: LevelLike, cam: CameraState, frame: nu
     ctx.lineWidth = 2;
     ctx.stroke();
   }
-  // the sign: honesty in advertising, for once
+  // the crew's wayfinding sign, posted like craft services: the star must
+  // not miss his own rescue scene — HERO ENTRANCE, arrow at the door
   const signX = x0 - 14;
   orect(ctx, signX - 1, baseY - 14, 3, 14, '#8a5a2b'); // post
   orect(ctx, signX - 20, baseY - 26, 42, 13, '#e6d9a8');
-  txt(ctx, 'RESCUE HERE', signX + 1, baseY - 22, 4.5, '#3a2a1e');
-  txt(ctx, '(TOO LATE)', signX + 1, baseY - 17, 4, '#c22e2e');
+  txt(ctx, 'HERO', signX + 1, baseY - 22, 4.5, '#3a2a1e');
+  txt(ctx, 'ENTRANCE', signX - 2, baseY - 17, 4, '#3a2a1e');
+  // the arrow, aimed square at the door
+  tri(ctx, signX + 12, baseY - 20, signX + 12, baseY - 14.5, signX + 18, baseY - 17.2, '#c22e2e');
 }
 
 // ---------------------------------------------------------------------------

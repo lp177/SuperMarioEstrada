@@ -596,7 +596,8 @@ export const world2: LevelDef[] = [
   // -------------------------------------------------------------------------
   // w2a7 — the trunk line: two pipe fields crawling with lawyer plants,
   // goldbars sitting brazenly on pipe mouths, the surveillance drone
-  // ("TOTALLY A BIRD"), and the world's widest spike pits. Hard. THE MONEY
+  // (taped craft feathers, per the authorship rule), and the world's widest
+  // spike pits. Hard. THE MONEY
   // VAULT — goldbar 4 in a coin-stuffed room under the finale; a flush drain
   // grate right at the pyramid's feet (cols 176-177, because of course the
   // drain is there) drops you in, a shaft (cols 188-189) climbs back out on
