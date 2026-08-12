@@ -32,8 +32,6 @@ import { PHYS, TILE } from '../core/constants.ts';
 // ---------------------------------------------------------------------------
 /** Raise 'skid' only when reversing above this speed (quiet shuffle turns). */
 const SKID_EVENT_MIN_VX = 1.5;
-/** |vx| above this earns the run-jump bonus impulse (PHYS.jumpRunBonus). */
-const RUN_JUMP_MIN_VX = 2.4;
 /** Landing raises 'land' only after this many airborne frames (no spam). */
 const LAND_EVENT_MIN_AIR = 6;
 /** Post-hurt knockback speed, pointed away from the attacker. */
@@ -232,8 +230,12 @@ export class Player implements PlayerLike {
     else if (this.jumpBuf > 0) this.jumpBuf--;
 
     if (this.jumpBuf > 0 && this.coyote > 0) {
+      // Takeoff scales LINEARLY with ground speed (SMW model) — no threshold
+      // step — saturating at jumpBonusAtVx so any committed movement earns
+      // the full calibrated takeoff.
       this.vy =
-        PHYS.jump + (Math.abs(this.vx) > RUN_JUMP_MIN_VX ? PHYS.jumpRunBonus : 0);
+        PHYS.jump +
+        PHYS.jumpRunBonus * Math.min(1, Math.abs(this.vx) / PHYS.jumpBonusAtVx);
       this.jumpBuf = 0;
       this.coyote = 0;
       this.jumping = true;
@@ -249,8 +251,15 @@ export class Player implements PlayerLike {
     if (!input.jump && this.jumping && this.vy < -PHYS.jumpCut) {
       this.vy = -PHYS.jumpCut;
     }
+    // Three-phase gravity (SMW research): light while rising held, HEAVY
+    // while rising released (fast apex turnover), and a fall gravity between
+    // the two — descents float relative to the post-release rise.
     const g =
-      this.vy < 0 && input.jump && this.jumping ? PHYS.gravHold : PHYS.grav;
+      this.vy < 0
+        ? input.jump && this.jumping
+          ? PHYS.gravHold
+          : PHYS.gravRise
+        : PHYS.grav;
     this.vy = Math.min(this.vy + g, PHYS.maxFall);
 
     // (4) ducking -------------------------------------------------------------

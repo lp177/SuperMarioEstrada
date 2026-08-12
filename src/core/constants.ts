@@ -28,22 +28,39 @@ export const PHYS = {
   runBoost: 1.6,
   walkMax: 2.4,
   runMax: 4.4,
-  /** Deceleration when skidding (holding the opposite direction). */
+  /** Deceleration when skidding (holding the opposite direction).
+   *  Research: SMW's turn accel ~2.3x ground accel (DiGRA "You Say Jump"). */
   skid: 0.42,
-  /** Ground friction with no input. */
-  frc: 0.12,
-  airAcc: 0.16,
+  /** Ground friction with no input. SMW: deceleration == acceleration —
+   *  stops as crisp as starts (measured 13.125 u/s^2 both ways). */
+  frc: 0.17,
+  /** SMW: air acceleration == ground acceleration, same caps, same turn. */
+  airAcc: 0.17,
+  // Three-phase gravity (SMW measurements: hold-rise 3.5g, released-rise
+  // 6.9g, fall 5.7g — the fall is FLOATIER than the post-release rise, which
+  // is what makes the apex turn over fast yet descents feel forgiving).
   /** Gravity while rising with jump held (variable jump height). */
   gravHold: 0.17,
-  /** Gravity otherwise. */
-  grav: 0.42,
-  maxFall: 7,
+  /** Gravity while rising with jump RELEASED — heavy, fast apex turnover
+   *  (with jumpCut this phase is brief; ratio to fall mirrors SMW's 6.9:5.7). */
+  gravRise: 0.55,
+  /** Gravity while falling (`grav` keeps its name: descent is the dominant
+   *  phase and the gate's arc tables derive from it). 0.82x gravRise. */
+  grav: 0.45,
+  /** Terminal fall speed ~1.1x takeoff magnitude (SMW: 17.25 vs 15.75). */
+  maxFall: 8,
   /** Initial jump impulse (negative = up). Slightly stronger at full run.
    *  NOTE: full-held height is a LEVEL-GEOMETRY CONTRACT — 30 gated acts are
    *  calibrated against it (a 4% trim broke w4a2's climb). Tune jump FEEL via
    *  jumpCut below; touch this only alongside a full world re-tune. */
   jump: -6.7,
+  /** Takeoff bonus scales LINEARLY with ground speed (SMW: 13.75 -> 15.75
+   *  mapped over speed; a binary threshold feels stepped) and SATURATES at
+   *  jumpBonusAtVx — any committed movement earns the full -7.3 takeoff,
+   *  which is the calibrated geometry contract (pyramid launches happen from
+   *  short treads that never reach runMax). */
   jumpRunBonus: -0.6,
+  jumpBonusAtVx: 2.4,
   /** Releasing jump while rising clamps upward speed to this — the jump-CUT
    *  that makes tap-vs-hold height control real (playtest: taps flew too
    *  high without it, and the full jump was "slightly too high"). */
@@ -169,6 +186,11 @@ export const GOAL = {
   bonusMaxCoins: 20,
   /** Grabs at h >= this fraction are notary-certified ('certify' fires too). */
   topGrabFrac: 0.9,
+  /** RULE CONSTANT, not motion physics: gravity of the certification arc the
+   *  gate prices pole launches against (rule 14). Frozen at the value the 30
+   *  pyramids were calibrated under — feel-tuning PHYS gravities must never
+   *  silently move this design bar. */
+  grabArcGrav: 0.42,
 } as const;
 
 export const STORAGE_KEYS = {

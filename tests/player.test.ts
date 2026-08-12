@@ -159,10 +159,12 @@ describe('Player: speed above the cap is never eaten', () => {
     step1(p, map, { jump: true, jumpPressed: true }); // real jump: jumping=true
     p.bounce(false);
     expect(p.vy).toBe(PHYS.bounce);
-    // While rising with jump held, gravity must be the heavy one now.
+    // While rising with jump held after a bounce, gravity must NOT be the
+    // held-jump float (gravHold): under the three-phase model a non-jumping
+    // rise gets the heavy released-rise gravity.
     const vyBefore = p.vy;
     step1(p, map, { jump: true });
-    expect(p.vy - vyBefore).toBeCloseTo(PHYS.grav, 10);
+    expect(p.vy - vyBefore).toBeCloseTo(PHYS.gravRise, 10);
   });
 });
 

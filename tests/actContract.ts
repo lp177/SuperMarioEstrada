@@ -1551,7 +1551,10 @@ export const FULL_JUMP_APEX_PX = (() => {
   let vy = PHYS.jump + PHYS.jumpRunBonus;
   let rise = 0;
   for (let f = 0; f < 400; f++) {
-    vy += PHYS.grav;
+    // GOAL.grabArcGrav, NOT PHYS.grav: the certification arc is a frozen
+    // design bar (rule 14 calibration), deliberately decoupled from feel
+    // physics — a gravity retune must never silently re-price the pyramids.
+    vy += GOAL.grabArcGrav;
     if (vy >= 0) break;
     rise += -vy;
   }
