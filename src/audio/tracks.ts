@@ -3,6 +3,19 @@
 // the melodies. Pure data + pure helpers: this module does zero audio work and
 // imports clean in plain Node. music.ts is the only consumer that makes sound.
 //
+// THE FOUR-CHANNEL ECONOMY (house doctrine, from Kondo's own constraints):
+// every track is written for exactly the classic chip — TWO pulse channels
+// (lead + arp), ONE triangle (bass), ONE noise. The constraint IS the
+// aesthetic: each tonal voice is strictly MONOPHONIC (no hold may overlap the
+// voice's next onset, loop wrap included — tested), and the MELODY TRADES
+// between the two pulse channels somewhere in every loop: each track has at
+// least one beat where the arp carries the tune alone and one where the lead
+// does (tested). The noise channel drives the rhythmic variation; music.ts
+// additionally scales its energy with gameplay intensity (the run heat).
+// Idiom: jaunty tropical/calypso swing, marimba-staccato melodies, per-world
+// UNAMBIGUOUS mood — sparse underground SPACE for the sewer, swing for the
+// casino, a crooked parade for the castle.
+//
 // PATTERN STEP GRAMMAR (compact, whitespace-separated tokens):
 //   .        rest (one step)
 //   |        bar line, purely cosmetic — ignored by the parser
@@ -148,6 +161,13 @@ export function midiToFreq(midi: number): number {
 // notes (sewer) to swung sixteenth comping (casino). The data test asserts a
 // >= 2.5x notes-per-second span across the four LEVEL themes.
 //
+// TEMPO IS KINETIC: the groove sets the player's stride. At full run the
+// stride animation flips every 8 frames (painter: period 4, cycle of 4), so
+// footfalls land at 7.5 Hz — which is exactly sixteenth notes at 112.5 bpm.
+// The meadow (the game's default gait) sits at 112 so the run locks to the
+// groove; everything else stays inside the house band 104..124 so intensity
+// modulation (±12% tempo) never leaves it unreadable.
+//
 // EVERY TRACK IS DIEGETIC — the score the conspirators commissioned for their
 // own production, world by world (see AGENTS.md "THE WORLD IS A SET").
 // ---------------------------------------------------------------------------
@@ -155,26 +175,35 @@ export function midiToFreq(midi: number): number {
 export const TRACKS: Record<TrackId, TrackConfig> = {
   // -- HOME SET: three DISTINCT con-man swagger tunes (title + home-b/c). ----
 
-  // Swaggering con-man strut: minor-pentatonic bluesy swagger over a lazy
-  // swung backbeat. The sound of a man who just sold you your own house.
+  // Sunny calypso swagger: oom-pah bass with upbeat pushes, a staccato
+  // marimba hook that hands its answer to the high pulse (bar 3 belongs to
+  // the steel-ish second pulse). The cruise-ship band of a man who just sold
+  // you your own house.
   title: {
-    name: "The Grifter's Strut",
-    bpm: 112,
-    scale: [0, 3, 5, 7, 10],
-    root: 45, // A2
+    name: "Grifter's Paradise",
+    bpm: 114,
+    scale: [0, 2, 4, 7, 9],
+    root: 47, // B2
     bars: 4,
-    swing: 0.2,
-    bass: { div: 2, steps: '0 . 0 . 2 . 3 . | 0 . 0 . 4 . 3 .' },
+    swing: 0.24,
+    bass: {
+      div: 2,
+      steps: '0 . 3, . 0 . 3, 3, | 1 . 3, . 1 . 4, . | 0 . 3, . 0 . 3, 3, | 2 . 4, . 0 . 3, .',
+    },
     lead: {
       div: 2,
-      steps:
-        "0' . . 4 . 3 4 . | 2:3 . . 0 . . 2 3 | 0' . . 4 . 3 4 . | 2':4 . . . 4 3 2 0",
+      steps: "4 . 2 . 4 2 0 . | 1 2 1 . 0:2 . . . | . . . . . . . . | 4 . 0' . 4 2 1 .",
     },
-    noise: { div: 2, steps: '2 . 0 . 1 . 0 .' },
+    arp: {
+      div: 2,
+      steps: ". . . . . . . . | . . . . . . 2 4 | 0' . 4 2 4 2 0 . | . . . . . . . .",
+    },
+    noise: { div: 2, steps: '2 . 0 0 1 . 0 . | 2 . 0 0 1 0 0 .' },
   },
 
   // Sleazy dominant-pentatonic finger-snap strut, heavier swing, big pauses:
-  // the walk of a notary who certifies his own alibis.
+  // the walk of a notary who certifies his own alibis. The second pulse is
+  // the entourage snapping back in every hole the lead leaves.
   'home-b': {
     name: 'Notary Public Enemy',
     bpm: 108,
@@ -187,6 +216,10 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
       div: 2,
       steps:
         "4 . 4 3:2 . . 2 . | . 2 4 2 1:2 . . . | 4 . 4 3:2 . . 2 . | 4' 3' 2' 4 1:3 . . .",
+    },
+    arp: {
+      div: 2,
+      steps: ". . . . 0' . . . | . . . . . . 4 2 | . . . . 0' . . . | . . . . . . 1 0",
     },
     noise: { div: 2, steps: '2 . 0 1 . 0 1 .' },
   },
@@ -211,43 +244,59 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
 
   // -- LEVEL THEMES ----------------------------------------------------------
 
-  // W1 is Estrada's fake hero-movie set, so W1 gets the ersatz spaghetti-
-  // western hero score: triplet gallop bass, big lonely whistled calls.
+  // W1 is Estrada's hero-movie set, and he scored it like the opening number
+  // of a beach resort: full calypso — oom-pah bass pushing the upbeats,
+  // marimba-staccato hook (short notes, sun between them), the high pulse
+  // answering bar 3 like a steel drum. 112 bpm = the full-run footfall lock
+  // (see TEMPO IS KINETIC above): running IS keeping time with this tune.
   meadow: {
-    name: 'The Good, the Bad and the Notarized',
+    name: 'Certified Sunshine (Calypso of the Con)',
     bpm: 112,
-    scale: [0, 3, 5, 7, 10],
-    root: 43, // G2
+    scale: [0, 2, 4, 7, 9],
+    root: 45, // A2
     bars: 4,
+    swing: 0.26,
     bass: {
-      div: 3,
-      steps: '0 . 0 0 . 0 0 . 0 2 . 2 | 3 . 3 3 . 3 2 . 2 1 . 1',
+      div: 2,
+      steps: '0 . . 3, 0 . 3, . | 1 . . 3, 1 . 3, . | 0 . . 3, 0 . 3, . | 4, . 3, . 0 . 0 .',
     },
     lead: {
       div: 2,
-      steps:
-        "4:2 . 0':3 . . . 4 . | 3:2 . 2:2 . 0:2 . . . | 4:2 . 0':3 . . . 4 . | 2 3 2 0 3,:4 . . .",
+      steps: "0' . 4 . 2 4 . . | 1 2 4 . 0:2 . . . | . . . . . . . . | 2 4 2 1 0:2 . . .",
     },
-    noise: { div: 2, steps: '2 . 2 2 1 . 2 . | 2 . 2 2 1 . 1 1' },
+    arp: {
+      div: 2,
+      steps: ". . . . . . . . | . . . . . . 3 4 | 0' . 4 . 2 4 0 . | . . . . . . . .",
+    },
+    noise: { div: 2, steps: '2 . 0 0 1 . 0 0 | 2 0 0 0 1 . 0 .' },
   },
 
-  // The laundromat rhythm: drippy minor pentatonic, quarter notes with holes
-  // everywhere, and a cash-register "ka-ching" up top twice a loop. Money
-  // gets laundered slowly down here — delicates setting.
+  // The underground goes SPARSE — minimalism as strength: a soft triangle
+  // heartbeat, two-note pulse stabs, and then SPACE. The second pulse is a
+  // literal ECHO — the same stab, one bar later, same pitch, half the gain
+  // (arp sits +2 octaves so it is authored a mark lower): laundered money
+  // dripping through big empty pipes.
   sewer: {
     name: 'Spin Cycle (Money Laundering Setting)',
     bpm: 104,
     scale: [0, 3, 5, 7, 10],
     root: 41, // F2
     bars: 4,
-    bass: { div: 1, steps: '0:2 . 2:2 . 0:2 . 1:2 .' },
-    lead: { div: 1, steps: '. 4 . 3 | . . 2:2 . | . . 4, . | . 2:3 . .' },
-    arp: { div: 1, steps: ". . . . . . . 4' | . . . . . . . 2''" },
-    noise: { div: 1, steps: '. . 0 . . 0 . .' },
+    bass: { div: 1, steps: '0 . . . 0 . 2 . | 0 . . . 4, . 2 .' },
+    lead: {
+      div: 2,
+      steps: "0' . . 4 . . . . | . . . . . . . . | 2 . . 3 . . . . | . . . . . . . .",
+    },
+    arp: {
+      div: 2,
+      steps: '. . . . . . . . | 0 . . 4, . . . . | . . . . . . . . | 2, . . 3, . . . .',
+    },
+    noise: { div: 1, steps: '. . 0 . . . 0 .' },
   },
 
-  // Swing jazz-chip: walking bass, swung comping, hats on everything, and
-  // slot-bell dings ringing over the top. The house edge, orchestrated.
+  // Swing jazz-chip: walking bass, a swung riff that leaves real holes, and
+  // slot-bell runs from the second pulse cashing out in every one of them.
+  // The house edge, orchestrated for exactly four channels.
   casino: {
     name: 'The House Always Wins',
     bpm: 124,
@@ -258,17 +307,21 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
     bass: { div: 1, steps: '0, 1, 2, 3, 4, 3, 2, 1,' },
     lead: {
       div: 2,
-      steps:
-        "4 3 2 . 1 2 3 . | 4 . 2'' . 1' 4 2 . | 4 3 2 . 1 2 3 4 | 1':2 . . 0' 4 2 1 .",
+      steps: "2' 1' 4 . 2 . 4 . | . . . . . . 1 2 | 2' 1' 4 . 2 4 1 . | 0':2 . . . . . . .",
     },
-    arp: { div: 4, steps: "0 2 4 2 0 2 4 2 1 2 4 2 1 2 4 0''" },
+    arp: {
+      div: 2,
+      steps: ". . . . . . . . | 0 2 4 2 0' . . . | . . . . . . . . | . . 4 2 1 2 4 0'",
+    },
     noise: { div: 2, steps: '0 0 1 0 0 0 1 0' },
   },
 
   // Bowsonaro's military parade march: oom-pah root-and-fifth bass, fife
   // lead, snare rolls — and ONE sour brass note per loop (step 26, +1 semi):
   // the pit orchestra was hired by the same people who built the cardboard
-  // castle. Deterministic, rare, and absolutely in the contract.
+  // castle. Deterministic, rare, and absolutely in the contract. The second
+  // pulse is a piccolo that only knows the two notes it plays into the one
+  // hole the fife leaves (end of bar 2) — it still gets parade credit.
   castle: {
     name: 'Motorcade of the Mito',
     bpm: 116,
@@ -281,6 +334,10 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
       steps:
         "0' 0' 0':2 . 4 3 4 . | 2':2 . 0':2 . 4:2 . . . | 0' 0' 0':2 . 4 3 4 . | 4' . 3' . 2' . 0':2 .",
     },
+    arp: {
+      div: 2,
+      steps: ". . . . . . . . | . . . . . . 4 4' | . . . . . . . . | . . . . . . . .",
+    },
     noise: {
       div: 4,
       steps: '2 . . . 1 . 1 1 2 . . . 1 . . . | 2 . . . 1 . 1 1 2 . 1 1 1 . 1 .',
@@ -290,7 +347,8 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
 
   // The parade gone frantic: the castle march's DNA at a dead sprint —
   // sixteenth bass stabs missing the downbeat, snare rolls tumbling over
-  // themselves. The motorcade has left the road.
+  // themselves, and the piccolo shrieking the alarm into the lead's last
+  // beat. The motorcade has left the road.
   boss: {
     name: 'The Parade Goes Feral',
     bpm: 124,
@@ -301,7 +359,8 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
       div: 4,
       steps: '0 . 0 0 . 0 . 0 3, . 3, 3, . 0 0 . | 1 . 1 1 . 1 . 1 2 . 2 2 . 4, 4, .',
     },
-    lead: { div: 2, steps: "0' 0' . 4 0' . 4 . | 2' 2' . 1' 2' . 4:2 ." },
+    lead: { div: 2, steps: "0' 0' . 4 0' . 4 . | 2' 2' . 1' 2' . . ." },
+    arp: { div: 2, steps: ". . . . . . . . | . . . . . . 2' 4'" },
     noise: {
       div: 4,
       steps: '2 . 0 0 1 . 1 1 2 . 0 . 1 1 . 1 | 2 2 0 . 1 . 1 1 2 . 0 0 1 1 1 .',
@@ -330,7 +389,8 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
 
   // Triumphant fanfare that keeps slipping off its own pedestal — and the
   // crooked cadence is now literal: ONE flatted note in the fanfare (step 13,
-  // -1 semi). The trumpet player also lost money on the bet.
+  // -1 semi). The trumpet player also lost money on the bet. Bar 3 leaves a
+  // gap where the second trumpet (the arp) holds the ceremony together alone.
   ending: {
     name: 'Triumph (Terms and Conditions Apply)',
     bpm: 120,
@@ -341,9 +401,9 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
     lead: {
       div: 2,
       steps:
-        "0' 0' 0':2 . . 4 3 . | 2' 2' 2':2 . . 1' 0' . | 4' . 3' . 2' . 1' . | 0':2 . . 4 2 1 . 0:2",
+        "0' 0' 0':2 . . 4 3 . | 2' 2' 2':2 . . 1' 0' . | 4' . 3' . . . 1' . | 0':2 . . 4 2 1 . 0",
     },
-    arp: { div: 4, steps: "0 . 4 . 0' . 4 . 1 . 4 . 1' . 4 ." },
+    arp: { div: 4, steps: "0 . 4 . . . . . 1 . 4 . 1' . . ." },
     noise: { div: 2, steps: '2 . 1 . 2 . 1 .' },
     sourNotes: [{ voice: 'lead', step: 13, semi: -1 }],
   },
@@ -370,7 +430,9 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   },
 
   // The other cassette in the hold machine: ritusen politeness, soft hats
-  // only, a phrase that resolves just enough to keep you on the line.
+  // only, a phrase that resolves just enough to keep you on the line — the
+  // chintz arpeggio politely waits out the melody's first beat, then noodles
+  // alone through its rests.
   'hold-b': {
     name: 'Please Continue to Hold (Est. Wait: 4 Worlds)',
     bpm: 104,
@@ -384,7 +446,7 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
       steps:
         "4 3 2:2 . . . . . | 1 2 3:2 . . . . . | 4 3 2:2 . . . . . | 1 . 0':4 . . . . .",
     },
-    arp: { div: 2, steps: '. 0 . 2 . 4 . 2 . 1 . 3 . 4 . 2' },
+    arp: { div: 2, steps: '. . . 2 . 4 . 2 . . . 3 . 4 . 2' },
     noise: { div: 1, steps: '. 0 . 0 . 0 . 0' },
   },
 };
@@ -411,10 +473,12 @@ export function variantOf(id: string): number {
  *  by construction. */
 export const SAFE_TRANSPOSES: readonly number[] = [2, 3, -2, -3, 5, -4];
 
-/** Lead timbres the variation engine may swap in. 'pulse25' is a 25%-duty
- *  pulse built as a periodic wave by music.ts; the base arrangement (variant
- *  0) is always 'square' — the TONAL table's house lead. */
-export type LeadTimbre = 'square' | 'triangle' | 'pulse25';
+/** Lead timbres the variation engine may swap in. ALL pulse-family — the
+ *  four-channel economy says the two melodic channels are PULSES (the one
+ *  triangle belongs to the bass); 'pulse25'/'pulse125' are 25%/12.5%-duty
+ *  pulses built as periodic waves by music.ts. The base arrangement (variant
+ *  0) is always 'square' (a 50%-duty pulse) — the TONAL table's house lead. */
+export type LeadTimbre = 'square' | 'pulse25' | 'pulse125';
 
 export interface VoiceArrangement {
   div: 1 | 2 | 3 | 4;
@@ -533,7 +597,7 @@ export function arrange(cfg: TrackConfig, variant: number): Arrangement {
     draw() % 3 === 0
       ? { div: 2, steps: pumpBass(rotatedBass, cfg.bass.div) }
       : { div: cfg.bass.div, steps: rotatedBass };
-  const timbres: readonly LeadTimbre[] = ['square', 'triangle', 'pulse25'];
+  const timbres: readonly LeadTimbre[] = ['square', 'pulse25', 'pulse125'];
   const leadTimbre = timbres[draw() % timbres.length]!;
   const deltas = [0.06, 0.1, -0.06, -0.1];
   const swing = Math.min(0.45, Math.max(0, (cfg.swing ?? 0) + deltas[draw() % deltas.length]!));

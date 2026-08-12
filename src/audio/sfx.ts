@@ -44,17 +44,27 @@ const SFX_HEADROOM = 0.5;
 const MAX_VOICES = 24;
 
 // ---------------------------------------------------------------------------
-// The synth-recipe table. Ambient entries (drip / slot-spin / gavel-slam /
-// lava-bubble) are deliberately QUIET — they are scenery, not information.
+// The synth-recipe table. HOUSE DOCTRINE: sfx are MUSICAL EVENTS — pitched,
+// quasi-instrumental, harmonically compatible with the pentatonic score
+// (arps favor pentatonic intervals: 2/4/5/7/9/12). The classic idiom rules
+// the core verbs: jump = rising pitch-bend pulse blip, pipe = descending
+// warble, brick = noise crunch + pitched pop, coin = bright two-tone ding,
+// powerups = ascending arpeggios, die = the descending tragicomic run.
+// Ambient entries (drip / slot-spin / gavel-slam / lava-bubble) are
+// deliberately QUIET — they are scenery, not information.
 // ---------------------------------------------------------------------------
 const RECIPES: Record<GameEvent, RecipeSpec> = {
   // -- player feel ----------------------------------------------------------
-  jump: { wave: 'square', f0: 300, f1: 720, dur: 8, vol: 0.3, slide: true },
+  // THE jump: a two-octave rising pitch-bend on the pulse — the classic
+  // upward whip, snappy enough to never smear a bunny-hop chain.
+  jump: { wave: 'square', f0: 220, f1: 880, dur: 12, vol: 0.3, slide: true },
   land: { wave: 'noise', f0: 220, f1: 120, dur: 5, vol: 0.12, slide: true },
   skid: { wave: 'noise', f0: 900, f1: 480, dur: 10, vol: 0.1, slide: true },
+  // Stomp reads as a musical event now: a quick rising "squish" blip (the
+  // bounce, pitched) over a tiny noise click (the costume deflating).
   stomp: [
-    { wave: 'square', f0: 200, f1: 70, dur: 8, vol: 0.4, slide: true },
-    { wave: 'noise', f0: 2500, f1: 900, dur: 3, vol: 0.3, slide: true }, // click
+    { wave: 'square', f0: 180, f1: 560, dur: 7, vol: 0.4, slide: true },
+    { wave: 'noise', f0: 2500, f1: 900, dur: 3, vol: 0.25, slide: true }, // click
   ],
   // Quick two-tone morph blip — one hero out, the other in (also the co-op
   // bubble pop): D5 answering a fourth up, with a whisper of poof underneath.
@@ -81,10 +91,24 @@ const RECIPES: Record<GameEvent, RecipeSpec> = {
   secret: { wave: 'square', f0: 1568, f1: 1568, dur: 28, vol: 0.3, arp: [0, -3, -7, -12] },
   'block-bump': { wave: 'square', f0: 180, f1: 140, dur: 6, vol: 0.3, slide: true },
   'block-empty': { wave: 'square', f0: 110, f1: 90, dur: 5, vol: 0.25, slide: true }, // dull thock
-  'brick-break': { wave: 'noise', f0: 1800, f1: 300, dur: 14, vol: 0.4, slide: true },
-  'powerup-appear': { wave: 'square', f0: 523.3, f1: 523.3, dur: 24, vol: 0.3, arp: [0, 4, 7, 12] },
-  // Triumphant 4-note arp — corruption has never felt this empowering.
-  'powerup-grab': { wave: 'square', f0: 659.3, f1: 659.3, dur: 28, vol: 0.4, arp: [0, 7, 12, 19] },
+  // Classic brick: the noise CRUNCH plus a pitched POP — the rubble jumps a
+  // fifth and an octave on the way out. Demolition, but make it musical.
+  'brick-break': [
+    { wave: 'noise', f0: 1800, f1: 300, dur: 14, vol: 0.4, slide: true },
+    { wave: 'square', f0: 480, f1: 480, dur: 8, vol: 0.3, arp: [0, 7, 12] },
+  ],
+  // The something-is-coming ladder: a full major-pentatonic climb, one
+  // octave — the mushroom-out-of-the-block idiom on OUR scale.
+  'powerup-appear': {
+    wave: 'square', f0: 523.3, f1: 523.3, dur: 24, vol: 0.3,
+    arp: [0, 2, 4, 7, 9, 12],
+  },
+  // Triumphant ascending arpeggio, two octaves — corruption has never felt
+  // this empowering.
+  'powerup-grab': {
+    wave: 'square', f0: 659.3, f1: 659.3, dur: 32, vol: 0.4,
+    arp: [0, 4, 7, 12, 16, 19, 24],
+  },
 
   // -- combat ---------------------------------------------------------------
   'pen-throw': { wave: 'square', f0: 700, f1: 1300, dur: 6, vol: 0.25, slide: true },
@@ -92,17 +116,35 @@ const RECIPES: Record<GameEvent, RecipeSpec> = {
   'shell-kick': { wave: 'square', f0: 200, f1: 520, dur: 7, vol: 0.35, slide: true },
   'enemy-flip': { wave: 'triangle', f0: 350, f1: 700, dur: 8, vol: 0.3, slide: true },
   hurt: { wave: 'sawtooth', f0: 600, f1: 150, dur: 16, vol: 0.4, slide: true },
-  // The classic ~1s descending death arp — ORIGINAL melody, C6 stumbling all
-  // the way down two octaves. 58 frames ≈ 0.97 s.
-  die: {
-    wave: 'square', f0: 1046.5, f1: 1046.5, dur: 58, vol: 0.4,
-    arp: [0, -3, -5, -8, -10, -15, -20, -24],
-  },
+  // THE DEATH JINGLE (~1.8 s, plays over the solo world-hold while the score
+  // ducks — see Level.intensity): an ORIGINAL tragicomic run on the two
+  // pulse channels — a hopeful little climb, a beat of doubt, then the
+  // two-octave pratfall, with the second pulse tumbling an octave below and
+  // six frames behind (the pit band's trombonist is, as ever, late) — capped
+  // by one low triangle thud when the career hits the floor.
+  die: [
+    {
+      wave: 'square', f0: 1046.5, f1: 1046.5, dur: 88, vol: 0.35,
+      arp: [0, 4, 7, 12, 12, 7, 2, -2, -7, -12, -17, -24],
+    },
+    {
+      wave: 'square', f0: 523.25, f1: 523.25, dur: 88, vol: 0.18, delay: 6,
+      arp: [0, 4, 7, 12, 12, 7, 2, -2, -7, -12, -17, -24],
+    },
+    { wave: 'triangle', f0: 110, f1: 49, dur: 16, vol: 0.5, slide: true, delay: 92 },
+  ],
   respawn: { wave: 'triangle', f0: 400, f1: 800, dur: 10, vol: 0.25, slide: true },
 
   // -- world objects --------------------------------------------------------
-  spring: { wave: 'triangle', f0: 150, f1: 900, dur: 14, vol: 0.35, slide: true }, // boing
-  pipe: { wave: 'square', f0: 500, f1: 150, dur: 20, vol: 0.35, slide: true },
+  // Boing: a near-three-octave triangle whip up — the spring is an
+  // instrument and it only knows glissando.
+  spring: { wave: 'triangle', f0: 130, f1: 1000, dur: 14, vol: 0.35, slide: true },
+  // The pipe warble: a stepped descending ZIGZAG (down a fourth, up a minor
+  // third, repeat) — the classic bubbling-downward transit sound, pitched.
+  pipe: {
+    wave: 'square', f0: 620, f1: 620, dur: 22, vol: 0.35,
+    arp: [0, -5, -2, -7, -4, -9, -6, -11, -8, -14],
+  },
   checkpoint: { wave: 'square', f0: 880, f1: 880, dur: 16, vol: 0.3, arp: [0, 5] },
   goal: { wave: 'square', f0: 523.3, f1: 523.3, dur: 40, vol: 0.4, arp: [0, 4, 7, 12, 16] },
   // Flag thunks into the dirt, then a smug little self-awarded "ta-da".

@@ -66,8 +66,18 @@ import { Bowsonaro } from './boss.ts';
 // ---------------------------------------------------------------------------
 /** Squash/death animation length handed to entities Level itself kills. */
 const ENEMY_DYING_FRAMES = 20;
-/** Frames between death and respawn at the checkpoint. */
+/** Frames between death and respawn at the checkpoint (CO-OP full wipe —
+ *  solo takes the staged SOLO_DEATH_FRAMES sequence below). */
 const RESPAWN_DELAY = 90;
+/** Solo death sequence length: stillness -> pop -> gravity-only fall, sized
+ *  so the ~1.8 s death jingle (sfx 'die') finishes under the world-hold.
+ *  Must stay <= 120: the classic tapes assert respawn within that window. */
+const SOLO_DEATH_FRAMES = 118;
+/** Corpse stillness before the classic launch — the staged beat of shock. */
+const DEATH_STILL_FRAMES = 12;
+/** The launch: the corpse pops up, then falls through the whole set (the
+ *  player's dead physics is already gravity-only through nothing). */
+const DEATH_POP_VY = -5.5;
 /** Flag-plant beat: the LAST body enters the door, then this many frames
  *  later 'flag-plant' fires and the act is finished. */
 const GOAL_CEREMONY_FRAMES = 90;
@@ -346,12 +356,24 @@ export class Level implements LevelLike {
     return (this.goalRow + 1) * TILE;
   }
 
-  /** 0..1 gameplay intensity hint for the music system. */
+  /** 0..1 gameplay intensity hint for the music system.
+   *  - Solo death: 0 — the score DUCKS under the death jingle (music.update
+   *    eases downward fast) and comes back the slow way after respawn.
+   *  - Speed feeds a gentle slope, but CHARGED FULL RUN (>= 90% of runMax,
+   *    grounded-ish: brief hops must not cool the groove) gets a dedicated
+   *    hot band that clears music.ts's HOT_NOISE_AT — the noise channel
+   *    lifts (ghost hats, hotter drums), tempo and filter open: the run
+   *    state's own musical ambiance. Anything below full run stays under
+   *    ~0.5 so the two states are audibly distinct.
+   *  - A live boss stays the hottest thing in the room. */
   get intensity(): number {
-    const speed = Math.min(1, Math.abs(this.player.vx) / PHYS.runMax);
+    const p = this.player;
+    if (this.players.length === 1 && p.dead) return 0;
+    const speed = Math.min(1, Math.abs(p.vx) / PHYS.runMax);
+    const fullRun = speed >= 0.9 && (p.grounded || Math.abs(p.vy) < 1.2);
     const bossActive =
       this.boss !== null && (this.boss.phase === 'intro' || this.boss.phase === 'fight');
-    return Math.min(1, 0.3 + 0.3 * speed + (bossActive ? 0.4 : 0));
+    return Math.min(1, 0.28 + 0.22 * speed + (fullRun ? 0.25 : 0) + (bossActive ? 0.4 : 0));
   }
 
   // -------------------------------------------------------------------------
@@ -378,6 +400,19 @@ export class Level implements LevelLike {
     // ride animates. This both looks classic and makes transit trivially safe.
     if (this.activeWarp) {
       this.updateWarp();
+      for (const p of this.players) for (const ev of p.events) this.events.push(ev);
+      return this.events;
+    }
+
+    // 1c. THE SOLO DEATH SEQUENCE: the world holds its breath — no entities,
+    // no boss, no hazards, no camera pan — while the corpse performs the
+    // classic staged exit (DEATH_STILL_FRAMES of stillness, then the
+    // DEATH_POP_VY launch, then a gravity-only fall through the set) and the
+    // death jingle plays over a ducked score (the intensity getter returns 0
+    // while solo-dead). Co-op never comes here: a bubble must never freeze
+    // the live partner, and a full wipe keeps the classic unheld timer.
+    if (this.players.length === 1 && this.player.dead && this.deathTimer > 0) {
+      this.updateDeathSequence();
       for (const p of this.players) for (const ev of p.events) this.events.push(ev);
       return this.events;
     }
@@ -415,8 +450,9 @@ export class Level implements LevelLike {
 
     // death timer -> full respawn (runs after the player updates so a
     // 'respawn' raised by a player survives until the end-of-step collection).
-    // Solo: every death arms it. Co-op: only a full wipe does (bubbles are
-    // free); it then respawns EVERYONE at the checkpoint.
+    // Only the CO-OP full wipe still reaches this (bubbles are free; a wipe
+    // respawns EVERYONE at the checkpoint) — the solo path early-returns
+    // through the death sequence at step 1c and never gets here.
     if (this.player.dead && this.deathTimer > 0) {
       this.deathTimer--;
       if (this.deathTimer === 0) {
@@ -627,6 +663,25 @@ export class Level implements LevelLike {
     }
   }
 
+  /** One frame of the solo death hold (step 1c). The corpse is a performer:
+   *  perfectly still through the shock beat, launched at DEATH_STILL_FRAMES,
+   *  then handed back to its own dead physics for the fall. */
+  private updateDeathSequence(): void {
+    const p = this.player;
+    p.events.length = 0; // stale step events must not re-emit during the hold
+    const elapsed = SOLO_DEATH_FRAMES - this.deathTimer;
+    if (elapsed === DEATH_STILL_FRAMES) {
+      p.vx = 0;
+      p.vy = DEATH_POP_VY; // the classic launch
+    }
+    if (elapsed >= DEATH_STILL_FRAMES) p.update(NO_INPUT, this.map);
+    this.deathTimer--;
+    if (this.deathTimer === 0) {
+      this.deathTimer = -1;
+      this.respawnAll();
+    }
+  }
+
   /** Everyone back at the checkpoint (solo: the one body — today's path). */
   private respawnAll(): void {
     for (let i = 0; i < this.players.length; i++) {
@@ -808,7 +863,9 @@ export class Level implements LevelLike {
   /** Post-death routing. Solo — and a co-op full wipe — takes the classic
    *  counted-death respawn timer. A co-op death with a live partner is a
    *  FREE bubble instead (generous house tuning: deaths only count when the
-   *  whole team wipes). */
+   *  whole team wipes). The counted paths stage THE DEATH POP: solo holds
+   *  the corpse perfectly still until step 1c launches it; the co-op wipe
+   *  (no world-hold there) launches immediately. */
   private onDeath(p: PlayerLike): void {
     if (this.players.length > 1 && this.activeLeader() !== null) {
       p.bubbleT = BUBBLE_FRAMES; // p.dead stays true: inert & intangible
@@ -817,7 +874,14 @@ export class Level implements LevelLike {
       return;
     }
     this.stats.deaths++;
-    this.deathTimer = RESPAWN_DELAY;
+    p.vx = 0;
+    if (this.players.length > 1) {
+      p.vy = DEATH_POP_VY;
+      this.deathTimer = RESPAWN_DELAY;
+    } else {
+      p.vy = 0; // held still; the pop lands DEATH_STILL_FRAMES into step 1c
+      this.deathTimer = SOLO_DEATH_FRAMES;
+    }
   }
 
   // -------------------------------------------------------------------------

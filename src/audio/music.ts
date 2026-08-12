@@ -17,13 +17,19 @@
 //
 // VARIANTS: play(id, { variant }) — arrangement is derived deterministically
 // in tracks.ts (arrange()); this module only realizes it: transposed root,
-// swapped lead timbre (incl. a built 25%-duty periodic wave), variant swing,
-// rearranged bass/percussion, thinned arps, and the sourNotes gag (a single
-// deliberately off-scale nudge, once per loop).
+// swapped lead timbre (pulse-family only: square / built 25%- and 12.5%-duty
+// periodic waves), variant swing, rearranged bass/percussion, thinned arps,
+// and the sourNotes gag (a single deliberately off-scale nudge, once per
+// loop).
 //
-// Intensity (0..1): scales tempo ±12% around the base bpm and opens the
-// master lowpass. Both move SMOOTHLY (per-frame easing in update()) and only
-// affect *future* beats — playheads are never reset.
+// Intensity (0..1): scales tempo ±12% around the base bpm, opens the master
+// lowpass, and drives the NOISE channel's energy (drum gain rises with heat;
+// past HOT_NOISE_AT a ghost hat rides every off-8th — the Kondo-style
+// interactive percussion layer that makes charged full-run play audibly
+// hotter). Everything moves SMOOTHLY (per-frame easing in update(), FAST
+// downward so intensity 0 doubles as a duck — the death jingle plays over a
+// score that steps aside) and only affects *future* beats — playheads are
+// never reset.
 //
 // HOME SET: playHome() rotates title/home-b/home-c through a deterministic
 // shuffle bag (all 3 before any repeat, never the same twice in a row).
@@ -65,9 +71,25 @@ const TEMPO_SPAN = 0.24;
 /** Master lowpass: 900 Hz closed .. ~7200 Hz open. */
 const FILTER_BASE_HZ = 900;
 const FILTER_OCTAVES = 3;
-/** Per-frame easing toward the intensity target (60 Hz update()). */
-const INTENSITY_EASE = 0.05;
+/** Per-frame easing toward the intensity target (60 Hz update()). Rising is
+ *  slow (heat builds), falling is FAST — a dropped target reads as a duck
+ *  (Level sends 0 during the solo death sequence; the score must bow out
+ *  under the jingle within a couple of beats, then come back the slow way). */
+const INTENSITY_EASE_UP = 0.05;
+const INTENSITY_EASE_DOWN = 0.12;
 const MASTER_HEADROOM = 0.9;
+
+// -- the Kondo-style interactive NOISE layer (see header) --------------------
+/** Drum gain multiplier travels floor..ceil across intensity 0..1. */
+const NOISE_GAIN_FLOOR = 0.7;
+const NOISE_GAIN_CEIL = 1.3;
+/** Above this eased intensity the noise channel gets its ghost-hat lift.
+ *  Calibrated against Level.intensity: charged full run reaches ~0.75, every
+ *  non-boss state below full run stays under ~0.5 — only the run state (and
+ *  hot boss play) crosses it. */
+const HOT_NOISE_AT = 0.7;
+/** Ghost hats ride at half the (already intensity-scaled) hat gain. */
+const GHOST_HAT_GAIN = 0.5;
 
 /** Home-screen rotation set (shuffle-bag; see playHome()). */
 export const HOME_SET: readonly TrackId[] = ['title', 'home-b', 'home-c'];
@@ -84,7 +106,10 @@ interface TonalSpec {
 }
 
 /** Exhaustive over VoiceName; noise is null because it dispatches to drums.
- *  The lead's wave is the BASE timbre — variants may override it. */
+ *  THE FOUR CHANNELS (house doctrine, see tracks.ts): lead + arp are the TWO
+ *  pulse channels (variants only ever swap the lead between pulse duties),
+ *  bass is THE one triangle, noise is the drum kit. The lead's wave is the
+ *  BASE timbre — variants may override it (pulse-family only). */
 const TONAL: Record<VoiceName, TonalSpec | null> = {
   bass: { wave: 'triangle', gain: 0.3, oct: 0 },
   lead: { wave: 'square', gain: 0.16, oct: 1 },
@@ -149,6 +174,7 @@ export class Music implements MusicLike {
   private filter: BiquadFilterNode | null = null;
   private noiseBuf: AudioBuffer | null = null;
   private pulse25: PeriodicWave | null = null;
+  private pulse125: PeriodicWave | null = null;
   private timer: number | null = null;
 
   private layers: Layer[] = [];
@@ -199,7 +225,8 @@ export class Music implements MusicLike {
     this.master = master;
     this.filter = filter;
     this.noiseBuf = makeNoiseBuffer(ctx);
-    this.pulse25 = makePulseWave(ctx);
+    this.pulse25 = makePulseWave(ctx, 0.25);
+    this.pulse125 = makePulseWave(ctx, 0.125);
     if (!this.suspended && ctx.state === 'suspended') void ctx.resume();
     if (!this.suspended) this.startWant();
   }
@@ -307,9 +334,11 @@ export class Music implements MusicLike {
   }
 
   /** Per-frame hook: ONLY parameter ramps (intensity easing -> filter/tempo).
-   *  All note scheduling lives on the interval timer, never here. */
+   *  All note scheduling lives on the interval timer, never here. Easing is
+   *  asymmetric: heat builds slowly, but drops FAST — that is the duck. */
   update(): void {
-    this.intensityCur += (this.intensityTarget - this.intensityCur) * INTENSITY_EASE;
+    const d = this.intensityTarget - this.intensityCur;
+    this.intensityCur += d * (d < 0 ? INTENSITY_EASE_DOWN : INTENSITY_EASE_UP);
     if (this.ctx && this.filter) {
       this.filter.frequency.setTargetAtTime(this.cutoffHz(), this.ctx.currentTime, 0.05);
     }
@@ -480,7 +509,14 @@ export class Music implements MusicLike {
   };
 
   private scheduleBeat(l: Layer, beat: number, tBeat: number, beatDur: number): void {
+    // The noise channel is the INTERACTIVE layer: its energy follows the
+    // eased gameplay intensity (evaluated at schedule time — deterministic
+    // for a given intensity trajectory, and never touching the sim).
+    const noiseEnergy =
+      NOISE_GAIN_FLOOR + (NOISE_GAIN_CEIL - NOISE_GAIN_FLOOR) * this.intensityCur;
+    let hasNoise = false;
     for (const v of l.voices) {
+      if (v.name === 'noise') hasNoise = true;
       const stepDur = beatDur / v.div;
       for (let s = 0; s < v.div; s++) {
         const idx = (beat * v.div + s) % v.steps.length;
@@ -488,9 +524,15 @@ export class Music implements MusicLike {
         if (note === null || note === undefined) continue;
         const swung = s % 2 === 1 ? l.arr.swing * stepDur : 0;
         const t = tBeat + s * stepDur + swung;
-        if (v.name === 'noise') this.drum(l, note, t);
+        if (v.name === 'noise') this.drum(l, note, t, noiseEnergy);
         else this.note(l, v.name, note, idx, t, stepDur);
       }
+    }
+    // Charged-run heat: a soft ghost hat rides the (swung) off-8th of every
+    // beat. Tracks without a drummer (hold-a's gag) keep their silence.
+    if (hasNoise && this.intensityCur >= HOT_NOISE_AT) {
+      const t = tBeat + beatDur * 0.5 * (1 + l.arr.swing);
+      this.drum(l, { deg: 0, oct: 0, len: 1 }, t, noiseEnergy * GHOST_HAT_GAIN);
     }
   }
 
@@ -507,10 +549,25 @@ export class Music implements MusicLike {
     const freq = midiToFreq(midi);
     const durS = Math.max(0.04, n.len * stepDur * 0.92);
     const o = ctx.createOscillator();
-    if (name === 'lead' && l.arr.leadTimbre === 'pulse25' && this.pulse25 !== null) {
-      o.setPeriodicWave(this.pulse25);
-    } else if (name === 'lead' && l.arr.leadTimbre !== 'pulse25') {
-      o.type = l.arr.leadTimbre;
+    if (name === 'lead') {
+      // Exhaustive over LeadTimbre — all pulse-family (channel discipline).
+      switch (l.arr.leadTimbre) {
+        case 'square':
+          o.type = 'square';
+          break;
+        case 'pulse25':
+          if (this.pulse25 !== null) o.setPeriodicWave(this.pulse25);
+          else o.type = 'square';
+          break;
+        case 'pulse125':
+          if (this.pulse125 !== null) o.setPeriodicWave(this.pulse125);
+          else o.type = 'square';
+          break;
+        default: {
+          const _x: never = l.arr.leadTimbre;
+          throw new Error(`music: unknown lead timbre ${String(_x)}`);
+        }
+      }
     } else {
       o.type = spec.wave;
     }
@@ -525,7 +582,9 @@ export class Music implements MusicLike {
     o.stop(t + durS + 0.03);
   }
 
-  private drum(l: Layer, n: StepNote, t: number): void {
+  /** One drum hit. `energy` is the intensity-driven gain multiplier — the
+   *  noise channel is the score's interactive layer (see scheduleBeat). */
+  private drum(l: Layer, n: StepNote, t: number, energy: number): void {
     const ctx = this.ctx;
     const buf = this.noiseBuf;
     if (!ctx || !buf) return;
@@ -540,7 +599,7 @@ export class Music implements MusicLike {
     f.type = kind.filter;
     f.frequency.value = kind.freq;
     const g = ctx.createGain();
-    g.gain.setValueAtTime(kind.gain, t);
+    g.gain.setValueAtTime(kind.gain * energy, t);
     g.gain.exponentialRampToValueAtTime(0.0001, t + kind.durS);
     src.connect(f);
     f.connect(g);
@@ -563,14 +622,16 @@ function makeNoiseBuffer(ctx: AudioContext): AudioBuffer {
   return buf;
 }
 
-/** 25%-duty pulse as a periodic wave (Fourier magnitudes sin(nπd)/n) — the
- *  variation engine's third lead timbre, nasal next to square and triangle. */
-function makePulseWave(ctx: AudioContext): PeriodicWave {
+/** Pulse wave of the given duty as a periodic wave (Fourier magnitudes
+ *  sin(nπd)/n). The variation engine's lead timbres are ALL pulse-family
+ *  (square = 50%, plus 25% and 12.5% — nasal and reedy respectively), so the
+ *  two melodic channels always read as the classic chip's two pulses. */
+function makePulseWave(ctx: AudioContext, duty: number): PeriodicWave {
   const N = 32;
   const real = new Float32Array(N);
   const imag = new Float32Array(N);
   for (let n = 1; n < N; n++) {
-    imag[n] = (2 / (n * Math.PI)) * Math.sin(n * Math.PI * 0.25);
+    imag[n] = (2 / (n * Math.PI)) * Math.sin(n * Math.PI * duty);
   }
   return ctx.createPeriodicWave(real, imag);
 }

@@ -22,7 +22,7 @@ import type {
   ThemeId,
   TileKind,
 } from '../core/types.ts';
-import { GOAL, SOLIDITY, TILE, VIEW_H, VIEW_W } from '../core/constants.ts';
+import { GOAL, PHYS, SOLIDITY, TILE, VIEW_H, VIEW_W } from '../core/constants.ts';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -2507,6 +2507,45 @@ export function drawPlayer(ctx: Ctx, player: PlayerLike, cam: CameraState, frame
     ctx.beginPath();
     ctx.ellipse(sx, gy, 13, vh / 2 + 4, 0, 0, Math.PI * 2);
     ctx.stroke();
+    ctx.restore();
+  }
+
+  // CHARGED FULL RUN (>= 90% runMax, grounded-ish — mirrors Level.intensity's
+  // hot band): tiny speed streaks + heel dust wisps trailing the runner — the
+  // run state's own visual ambiance, paired with the music's noise-channel
+  // lift. Deterministic from animT/vx only; drawn BEHIND the body. NOTE: the
+  // painter has no reduced-motion hook (fx owns RM policy), so these stay
+  // tiny, low-alpha and always-on by design.
+  if (
+    !player.dead &&
+    speed >= PHYS.runMax * 0.9 &&
+    (player.grounded || Math.abs(player.vy) < 1.2)
+  ) {
+    const dir = player.vx > 0 ? 1 : -1;
+    const vh = rig.visH(big);
+    const feetY = sy + player.halfH;
+    ctx.save();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2; // house chunky-pixel weight
+    for (let i = 0; i < 3; i++) {
+      const phase = (animT * 2 + i * 5) % 12; // scrolls away behind the runner
+      const y = feetY - 4 - (i * (vh - 6)) / 2;
+      const x0 = sx - dir * (7 + phase);
+      ctx.globalAlpha = 0.38 * (1 - phase / 16);
+      ctx.beginPath();
+      ctx.moveTo(x0, y);
+      ctx.lineTo(x0 - dir * (14 - i * 3), y);
+      ctx.stroke();
+    }
+    // two dust wisps rolling off the heels
+    ctx.fillStyle = '#e8e0d0';
+    for (let i = 0; i < 2; i++) {
+      const ph = ((animT * 3 + i * 12) % 24) / 24; // 0..1 roll-away cycle
+      ctx.globalAlpha = 0.3 * (1 - ph);
+      ctx.beginPath();
+      ctx.arc(sx - dir * (7 + ph * 11), feetY - 2 - ph * 4, 1.5 + ph * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
     ctx.restore();
   }
 

@@ -22,6 +22,7 @@ import {
 } from '../src/audio/tracks.ts';
 import { Sfx, sfxRecipeFor, allSfxEvents, type Recipe } from '../src/audio/sfx.ts';
 import { Music, HOME_SET, HOLD_SET } from '../src/audio/music.ts';
+import type { StepNote } from '../src/audio/tracks.ts';
 
 const IDS = Object.keys(TRACKS) as TrackId[];
 const LEVEL_THEMES: readonly ThemeId[] = ['meadow', 'sewer', 'casino', 'castle'];
@@ -38,6 +39,37 @@ function voicesOf(cfg: TrackConfig): { name: VoiceName; p: Pattern }[] {
 }
 
 const ser = (x: unknown): string => JSON.stringify(x);
+
+/** One channel = one voice: no note's hold may cover a later onset of the
+ *  SAME voice, cyclically (a hold on the last step wraps onto step 0). */
+function expectMonophonic(label: string, steps: (StepNote | null)[]): void {
+  const n = steps.length;
+  for (let i = 0; i < n; i++) {
+    const note = steps[i];
+    if (!note) continue;
+    for (let k = 1; k < Math.min(note.len, n); k++) {
+      const j = (i + k) % n;
+      expect(steps[j], `${label}: hold at step ${i} overlaps onset at ${j}`).toBeNull();
+    }
+  }
+}
+
+/** Project a pattern onto the track's beat grid: beat b is true when the
+ *  voice has at least one ONSET inside that beat (its loop repeats). */
+function onsetBeats(p: Pattern, loopBeats: number): boolean[] {
+  const steps = parsePattern(p);
+  const beats = steps.length / p.div;
+  const out = new Array<boolean>(loopBeats).fill(false);
+  for (let b = 0; b < loopBeats; b++) {
+    for (let s = 0; s < p.div; s++) {
+      if (steps[(b % beats) * p.div + s] != null) {
+        out[b] = true;
+        break;
+      }
+    }
+  }
+  return out;
+}
 
 describe('tracks: shape', () => {
   it('has all 12 tracks with satire-voiced names', () => {
@@ -217,6 +249,62 @@ describe('tracks: patterns', () => {
     expect(() => parsePattern({ div: 2, steps: '0 X 2' })).toThrow();
     expect(() => parsePattern({ div: 2, steps: '0:0' })).toThrow();
     expect(() => parsePattern({ div: 2, steps: '' })).toThrow();
+  });
+});
+
+describe('tracks: the four-channel economy (2 pulses + 1 triangle + 1 noise)', () => {
+  it('every track carries BOTH pulse channels (lead + arp)', () => {
+    for (const id of IDS) {
+      expect(TRACKS[id].arp, `${id}: the melody needs a second pulse to trade with`).toBeDefined();
+    }
+  });
+
+  it('every tonal voice is strictly monophonic, loop wrap included', () => {
+    for (const id of IDS) {
+      for (const { name, p } of voicesOf(TRACKS[id])) {
+        if (name === 'noise') continue;
+        expectMonophonic(`${id}.${name}`, parsePattern(p));
+      }
+    }
+  });
+
+  it('arranged variants keep the monophony (rotate/pump/thin are channel-safe)', () => {
+    for (const id of IDS) {
+      for (const v of [variantOf('w1a2'), variantOf('w3a5'), 7, 123]) {
+        const a = arrange(TRACKS[id], v);
+        expectMonophonic(`${id}#${v}.bass`, a.bass.steps);
+        expectMonophonic(`${id}#${v}.lead`, a.lead.steps);
+        if (a.arp) expectMonophonic(`${id}#${v}.arp`, a.arp.steps);
+      }
+    }
+  });
+
+  it('variant lead timbres stay pulse-family — THE triangle belongs to the bass', () => {
+    const pulses = ['square', 'pulse25', 'pulse125'];
+    for (const id of IDS) {
+      for (let v = 1; v <= 25; v++) {
+        expect(pulses, `${id}#${v}`).toContain(arrange(TRACKS[id], v).leadTimbre);
+      }
+    }
+  });
+});
+
+describe('tracks: the melody TRADES between the two pulse channels', () => {
+  it('each loop has a beat the arp carries alone AND a beat the lead carries alone', () => {
+    for (const id of IDS) {
+      const cfg = TRACKS[id];
+      const loopBeats = cfg.bars * 4;
+      const leadOn = onsetBeats(cfg.lead, loopBeats);
+      const arpOn = onsetBeats(cfg.arp!, loopBeats);
+      let arpAlone = 0;
+      let leadAlone = 0;
+      for (let b = 0; b < loopBeats; b++) {
+        if (arpOn[b] && !leadOn[b]) arpAlone++;
+        if (leadOn[b] && !arpOn[b]) leadAlone++;
+      }
+      expect(arpAlone, `${id}: the arp never takes the melody`).toBeGreaterThanOrEqual(1);
+      expect(leadAlone, `${id}: the lead never has the floor to itself`).toBeGreaterThanOrEqual(1);
+    }
   });
 });
 
@@ -483,7 +571,7 @@ describe('sfx: recipe table', () => {
     }
   });
 
-  it('signature moments keep their brief: ~1s death arp, snappy text blip', () => {
+  it('signature moments keep their brief: the death jingle, snappy text blip', () => {
     const die = layersOf('die');
     expect(Math.max(...die.map((r) => r.dur + (r.delay ?? 0)))).toBeGreaterThanOrEqual(50);
     for (const r of layersOf('text-blip')) expect(r.dur).toBeLessThanOrEqual(4);
@@ -491,6 +579,55 @@ describe('sfx: recipe table', () => {
     const coin = layersOf('coin');
     expect(coin[0]?.f0).toBeCloseTo(1318.5, 0);
     expect(coin[0]?.arp).toEqual([0, 7]);
+  });
+
+  it('the death JINGLE: two pulses + one late triangle thud, ~1.5s+, tragicomic', () => {
+    const die = layersOf('die');
+    expect(die.length).toBe(3);
+    const pulses = die.filter((r) => r.wave === 'square');
+    const thud = die.find((r) => r.wave === 'triangle');
+    expect(pulses.length, 'the run plays on the two pulse channels').toBe(2);
+    expect(thud, 'the career must audibly hit the floor').toBeDefined();
+    // the thud caps the run: it starts after the pulse layers are done
+    expect(thud!.delay ?? 0).toBeGreaterThanOrEqual(pulses[0]!.dur);
+    // long enough to be the jingle the solo world-hold was sized for (~1.5s+)
+    expect(Math.max(...die.map((r) => r.dur + (r.delay ?? 0)))).toBeGreaterThanOrEqual(90);
+    for (const r of pulses) {
+      const arp = r.arp ?? [];
+      expect(Math.max(...arp), 'a hopeful climb first (the tragicomic setup)').toBeGreaterThan(0);
+      expect(arp[arp.length - 1], 'the two-octave pratfall').toBe(-24);
+    }
+  });
+
+  it('classic-idiom verbs are pitched and musical (pipe warbles down, powerups climb)', () => {
+    // jump: one rising pitch-bend blip on the pulse
+    const jump = layersOf('jump');
+    expect(jump[0]!.slide).toBe(true);
+    expect(jump[0]!.f1).toBeGreaterThan(jump[0]!.f0);
+    // pipe: a stepped descending warble (zigzag, net downward)
+    const pipe = layersOf('pipe')[0]!;
+    const parp = pipe.arp ?? [];
+    expect(parp.length).toBeGreaterThanOrEqual(6);
+    expect(parp[parp.length - 1]!).toBeLessThan(0);
+    let zigzags = 0;
+    for (let i = 2; i < parp.length; i++) {
+      const a = parp[i - 1]! - parp[i - 2]!;
+      const b = parp[i]! - parp[i - 1]!;
+      if (a * b < 0) zigzags++;
+    }
+    expect(zigzags, 'a warble alternates direction while descending').toBeGreaterThanOrEqual(4);
+    // brick: noise crunch + a pitched pop layer
+    const brick = layersOf('brick-break');
+    expect(brick.some((r) => r.wave === 'noise')).toBe(true);
+    expect(brick.some((r) => r.wave !== 'noise' && (r.arp?.length ?? 0) > 0)).toBe(true);
+    // powerups: strictly ascending arpeggios
+    for (const ev of ['powerup-appear', 'powerup-grab'] as const) {
+      const arp = layersOf(ev)[0]!.arp ?? [];
+      expect(arp.length, ev).toBeGreaterThanOrEqual(4);
+      for (let i = 1; i < arp.length; i++) {
+        expect(arp[i]!, `${ev} must climb`).toBeGreaterThan(arp[i - 1]!);
+      }
+    }
   });
 
   it('an id outside the union THROWS — no silent fallback', () => {
