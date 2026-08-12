@@ -5,6 +5,7 @@ import { loadProgress, saveProgress } from './game/progress.ts';
 import { Game, type SceneFactory, type Services } from './game/game.ts';
 import { Sfx } from './audio/sfx.ts';
 import { Music } from './audio/music.ts';
+import { initPwa } from './pwa/swClient.ts';
 import { TitleScene } from './scenes/TitleScene.ts';
 import { WorldMapScene } from './scenes/WorldMapScene.ts';
 import { CutsceneScene } from './scenes/CutsceneScene.ts';
@@ -54,6 +55,9 @@ document.addEventListener('visibilitychange', () => {
 
 const game = new Game(canvas, services, factories, 'title');
 requestAnimationFrame(game.tick);
+
+// Offline support + update toast (PROD only; see src/pwa/swClient.ts).
+initPwa();
 
 // Debug handle for browser probes (house convention).
 Object.assign(window, { __game: game, __services: services });

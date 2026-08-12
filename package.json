@@ -8,7 +8,7 @@
     "dev": "vite",
     "test": "vitest run",
     "typecheck": "tsc --noEmit",
-    "build": "tsc --noEmit && vitest run && vite build",
+    "build": "tsc --noEmit && vitest run && vite build && node scripts/build-sw.mjs",
     "preview": "vite preview"
   },
   "devDependencies": {

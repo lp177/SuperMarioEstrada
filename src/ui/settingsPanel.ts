@@ -9,6 +9,7 @@ import type { ActionId } from '../core/types.ts';
 import { VIEW_H, VIEW_W } from '../core/constants.ts';
 import { keyLabel } from '../core/keyboardLayout.ts';
 import type { Services } from '../game/game.ts';
+import { offlineReady } from '../pwa/swClient.ts';
 import type { MenuNav } from './menuInput.ts';
 import { UI, panel, textShadow } from './theme.ts';
 
@@ -113,6 +114,13 @@ export class SettingsPanel {
       ctx,
       pads > 0 ? `🎮 ${pads} gamepad${pads > 1 ? 's' : ''} connected` : '🎮 no gamepad detected (plug in & press a button)',
       84, VIEW_H - 44, pads > 0 ? UI.ok : UI.textDim,
+    );
+    // Offline status readout (house lesson: support questions become
+    // answerable without a debug session).
+    textShadow(
+      ctx,
+      offlineReady() ? '⬇ offline play ready (cached)' : '⬇ offline not ready yet (needs one online visit)',
+      84, VIEW_H - 32, offlineReady() ? UI.ok : UI.textDim,
     );
     textShadow(ctx, 'keys are POSITIONS: labels follow your real layout (AZERTY-safe)', 84, VIEW_H - 56, UI.textDim);
     ctx.restore();

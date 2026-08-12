@@ -15,7 +15,7 @@
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
-    "types": []
+    "types": ["vite/client"]
   },
   "include": ["src", "tests"]
 }
