@@ -11,9 +11,10 @@ import { buildDecor, drawDecor, type Decor } from '../render/decor.ts';
 import { drawBoss, drawEntities, drawGoal, drawPlayer, drawTiles } from '../render/painter.ts';
 import { drawHud } from '../ui/hud.ts';
 import { MenuNav } from '../ui/menuInput.ts';
+import { SettingsPanel } from '../ui/settingsPanel.ts';
 import { UI, panel, textShadow } from '../ui/theme.ts';
 
-const PAUSE_ITEMS = ['RESUME', 'RESTART ACT', 'QUIT TO MAP'] as const;
+const PAUSE_ITEMS = ['RESUME', 'RESTART ACT', 'SETTINGS', 'QUIT TO MAP'] as const;
 
 function idHash(s: string): number {
   let h = 2166136261;
@@ -28,6 +29,7 @@ export class LevelScene implements SceneLike {
   private decor: Decor[];
   private paused = false;
   private pauseSel = 0;
+  private settings: SettingsPanel | null = null;
   private nav: MenuNav;
   /** Post-goal sting: excuse card. */
   private sting = false;
@@ -112,6 +114,10 @@ export class LevelScene implements SceneLike {
 
   private updatePause(): void {
     const { sfx, music } = this.services;
+    if (this.settings) {
+      if (!this.settings.update()) this.settings = null;
+      return;
+    }
     const action = this.nav.poll();
     if (!action) return;
     if (action === 'back') { this.paused = false; sfx.play('ui-back'); music.endPause(); return; }
@@ -122,6 +128,7 @@ export class LevelScene implements SceneLike {
       const item = PAUSE_ITEMS[this.pauseSel];
       if (item === 'RESUME') { this.paused = false; music.endPause(); }
       else if (item === 'RESTART ACT') this.game.changeScene('level', { levelId: this.params.levelId });
+      else if (item === 'SETTINGS') this.settings = new SettingsPanel(this.services, this.nav);
       else this.game.changeScene('worldmap', { focus: this.params.levelId });
     }
   }
@@ -196,7 +203,15 @@ export class LevelScene implements SceneLike {
     drawHud(ctx, this.level, this.frame);
 
     if (this.sting) this.renderSting(ctx);
-    if (this.paused) this.renderPause(ctx);
+    if (this.paused) {
+      if (this.settings) {
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+        this.settings.render(ctx);
+      } else {
+        this.renderPause(ctx);
+      }
+    }
   }
 
   private renderSting(ctx: CanvasRenderingContext2D): void {

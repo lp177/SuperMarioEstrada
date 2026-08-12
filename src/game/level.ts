@@ -188,6 +188,8 @@ export class Level implements LevelLike {
   private readonly ctx: EntityCtx;
 
   private respawnPoint: SpawnPoint;
+  /** Per-player auto-fire cooldown frames (index-matched to players). */
+  private readonly penCooldown: number[] = [0, 0];
   /** Warp links from the builder; transit state while riding a pipe. Only
    *  ONE warp is ever active — first come; the whole world pauses during. */
   private readonly warps: WarpLink[];
@@ -823,14 +825,19 @@ export class Level implements LevelLike {
   // Step 5: pens & shells
   // -------------------------------------------------------------------------
   private updatePensAndShells(inputs: readonly InputState[]): void {
-    // throw — from whichever body pressed fire; the penMax pool is SHARED
+    // throw — a fresh press fires immediately; HOLDING fire keeps throwing on
+    // the penRepeat cadence (classic hold-to-fire). The penMax pool is SHARED.
     for (let i = 0; i < this.players.length; i++) {
       const p = this.players[i]!;
-      if (!inputs[i]!.firePressed || p.dead || p.bubbleT > 0 || p.size !== 'goldpen') continue;
+      if (this.penCooldown[i]! > 0) this.penCooldown[i] = this.penCooldown[i]! - 1;
+      const inp = inputs[i]!;
+      const wants = inp.firePressed || (inp.run && this.penCooldown[i] === 0);
+      if (!wants || p.dead || p.bubbleT > 0 || p.size !== 'goldpen') continue;
       const live = this.ents.reduce((n, e) => n + (e.alive && e.kind === 'pen' ? 1 : 0), 0);
       if (live < PHYS.penMax) {
         this.ents.push(spawnPen(p.x, p.y, p.facing));
         this.events.push('pen-throw'); // at the player, no source entry
+        this.penCooldown[i] = PHYS.penRepeat;
       }
     }
 

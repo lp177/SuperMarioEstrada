@@ -265,6 +265,27 @@ describe('Level', () => {
     expect(level.backLimitX).toBeLessThanOrEqual(level.player.x - level.player.halfW + 1e-6);
   });
 
+  it('holding fire auto-throws pens on the repeat cadence (classic hold-to-fire)', () => {
+    const level = new Level(
+      makeDef(120, (b) => {
+        b.ground(0, 119, 30);
+        b.start(6, 29);
+        b.goal(110, 29);
+      }),
+    );
+    level.player.grow('goldpen');
+    // Hold run with NO fresh edges: pens must keep coming as slots free up.
+    let throws = 0;
+    for (let f = 0; f < 240; f++) {
+      const evs = level.update(inp({ run: true }));
+      throws += evs.filter((e) => e === 'pen-throw').length;
+    }
+    // 240 frames: penMax caps live pens at 2, pens die on walls/timeout, and
+    // the 12-frame cadence refills — several throws must happen with zero
+    // firePressed edges (the old behavior threw exactly 0 here).
+    expect(throws).toBeGreaterThanOrEqual(4);
+  });
+
   it('warp pipes: down on the mouth rides to the exit, ratchet follows', () => {
     const level = new Level(
       makeDef(120, (b) => {

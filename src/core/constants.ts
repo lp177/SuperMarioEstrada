@@ -67,6 +67,9 @@ export const PHYS = {
   penSpeed: 5,
   penLife: 90,
   penMax: 2,
+  /** Auto-fire cadence: holding `run` keeps throwing every N frames (classic
+   *  hold-to-fire, playtest ask); a fresh press always fires immediately. */
+  penRepeat: 12,
   springVy: -11.5,
 } as const;
 

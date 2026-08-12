@@ -70,22 +70,30 @@ describe('MenuNav priming', () => {
     expect(nav.poll()).toBe('down'); // fresh press after release works
   });
 
-  it('a held select channel does not activate until released once', () => {
+  it('a select edge present when the menu opens does not activate until re-pressed', () => {
     const inp = new StubInput();
-    inp.st.jump = true;
+    inp.edgeSet.add('Space'); // the press that opened this menu
     const nav = new MenuNav(inp);
-    for (let i = 0; i < 30; i++) {
-      expect(nav.poll()).toBe(null);
-    }
-    // even a raw Enter edge while the channel is still primed stays muted
-    inp.edgeSet.add('Enter');
-    expect(nav.poll()).toBe(null);
-    inp.edgeSet.clear();
-    inp.st.jump = false;
-    expect(nav.poll()).toBe(null); // seen released -> unprimed
+    expect(nav.poll()).toBe(null); // same frame: primed
+    inp.edgeSet.clear(); // endFrame ran, key released
+    expect(nav.poll()).toBe(null); // release observed -> unprimed
+    inp.edgeSet.add('Space');
+    expect(nav.poll()).toBe('select'); // a genuine new press
+  });
+
+  it('the jump ACTION never selects — ArrowUp (jump-bound) must navigate up', () => {
+    // Regression: ArrowUp is a default jump binding; when select listened to
+    // the jump action, pressing up ENTERED the focused item instead of moving
+    // focus (world map could not select upward nodes). Select is raw-codes
+    // only now: this simulates exactly what the real Input produces for an
+    // ArrowUp press — up held + jump held + jump edge + the raw code edge.
+    const inp = new StubInput();
+    const nav = new MenuNav(inp);
+    inp.st.up = true;
     inp.st.jump = true;
     inp.st.jumpPressed = true;
-    expect(nav.poll()).toBe('select');
+    inp.edgeSet.add('ArrowUp');
+    expect(nav.poll()).toBe('up');
   });
 
   it('the Escape edge that opened the menu is swallowed', () => {
@@ -139,8 +147,7 @@ describe('MenuNav priority', () => {
     const inp = new StubInput();
     const nav = new MenuNav(inp);
     inp.st.left = true;
-    inp.st.jump = true;
-    inp.st.jumpPressed = true;
+    inp.edgeSet.add('Space');
     expect(nav.poll()).toBe('select');
   });
 
@@ -154,8 +161,7 @@ describe('MenuNav priority', () => {
     const inp2 = new StubInput();
     nav = new MenuNav(inp2);
     inp2.st.pausePressed = true;
-    inp2.st.jumpPressed = true;
-    inp2.st.jump = true;
+    inp2.edgeSet.add('Enter');
     expect(nav.poll()).toBe('select');
   });
 });

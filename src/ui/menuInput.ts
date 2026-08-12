@@ -48,7 +48,11 @@ const DIR_CODES: Record<Dir, readonly string[]> = {
   right: ['ArrowRight', 'KeyD'],
 };
 
-const SELECT_CODES: readonly string[] = ['Enter', 'Space'];
+/** Menus confirm on EXPLICIT confirm inputs only: Enter, Space, pad A.
+ *  Never on the jump ACTION — ArrowUp/KeyW are jump bindings too, and using
+ *  the action made "up" enter the focused item instead of moving focus
+ *  (shipped bug: the world map could not select upward nodes). */
+const SELECT_CODES: readonly string[] = ['Enter', 'Space', 'Pad0'];
 /** Escape on keyboard; Pad1 = right face button (B) on a standard-mapping pad. */
 const BACK_CODES: readonly string[] = ['Escape', 'Pad1'];
 
@@ -68,7 +72,7 @@ function readActivity(s: InputState, e: ReadonlySet<string>): Record<Channel, bo
     down: s.down || anyIn(e, DIR_CODES.down),
     left: s.left || anyIn(e, DIR_CODES.left),
     right: s.right || anyIn(e, DIR_CODES.right),
-    select: s.jump || s.jumpPressed || anyIn(e, SELECT_CODES),
+    select: anyIn(e, SELECT_CODES),
     back: s.pausePressed || anyIn(e, BACK_CODES),
   };
 }
@@ -101,7 +105,7 @@ export class MenuNav {
     }
 
     // select/back fire on edges only, so they cannot spam while held.
-    const selectFire = !this.primed.select && (s.jumpPressed || anyIn(e, SELECT_CODES));
+    const selectFire = !this.primed.select && anyIn(e, SELECT_CODES);
     const backFire = !this.primed.back && (s.pausePressed || anyIn(e, BACK_CODES));
 
     // Directions: advance hold counters and pick the first that fires.
