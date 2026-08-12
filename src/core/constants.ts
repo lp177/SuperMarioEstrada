@@ -28,6 +28,12 @@ export const PHYS = {
   runBoost: 1.6,
   walkMax: 2.4,
   runMax: 4.4,
+  /** AUTO-RUN (playtest: "keep pressing... I don't see transition from walk
+   *  to run — just a slow walker"): sustained directional hold at near-walk
+   *  speed on the ground charges into a full run after this many frames —
+   *  the SMB3 P-speed transition, no modifier needed. The run BUTTON still
+   *  grants it instantly (and remains the fire button). */
+  runChargeFrames: 24,
   /** Deceleration when skidding (holding the opposite direction).
    *  Research: SMW's turn accel ~2.3x ground accel (DiGRA "You Say Jump"). */
   skid: 0.42,

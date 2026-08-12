@@ -70,18 +70,39 @@ describe('Player: standing and walking', () => {
     expect(p.y + p.halfH).toBe(FLOOR_TOP);
   });
 
-  it('accelerates to walkMax and never beyond; no landing spam while walking', () => {
-    const map = flatMap(80);
+  it('auto-run: walk caps at walkMax, then sustained hold breaks into a run', () => {
+    // Playtest doctrine: "keep pressing a direction" must TRANSITION from
+    // walk to run without the modifier (SMB3 P-speed) — but only after the
+    // charge window, so the walk phase is real and visible first.
+    const map = flatMap(160);
     const p = smallOnFloor(48);
     stepN(p, map, 2, {}); // settle
     const all: GameEvent[] = [];
+    let framesAtWalkCap = 0;
+    let brokeIntoRun = -1;
     for (let i = 0; i < 200; i++) {
       all.push(...step1(p, map, { right: true }));
-      expect(p.vx).toBeLessThanOrEqual(PHYS.walkMax);
+      if (p.vx === PHYS.walkMax) framesAtWalkCap++;
+      if (brokeIntoRun < 0 && p.vx > PHYS.walkMax) brokeIntoRun = i;
+      expect(p.vx).toBeLessThanOrEqual(PHYS.runMax);
     }
-    expect(p.vx).toBe(PHYS.walkMax);
+    expect(framesAtWalkCap).toBeGreaterThanOrEqual(PHYS.runChargeFrames - 2); // a real walk phase
+    expect(brokeIntoRun).toBeGreaterThan(PHYS.runChargeFrames / 2); // not instant
+    expect(p.vx).toBe(PHYS.runMax); // and it ends in a full run
     expect(p.facing).toBe(1);
-    expect(all).toEqual([]); // walking raises nothing — no 'land' spam
+    expect(all).toEqual([]); // walking/running raises nothing — no 'land' spam
+  });
+
+  it('auto-run charge decays: after a stop, a fresh hold walks first again', () => {
+    const map = flatMap(160);
+    const p = smallOnFloor(48);
+    stepN(p, map, 2, {});
+    stepN(p, map, 120, { right: true }); // charged into a full run
+    expect(p.vx).toBe(PHYS.runMax);
+    stepN(p, map, 60, {}); // release: friction stops, charge decays
+    expect(p.vx).toBe(0);
+    stepN(p, map, 10, { right: true }); // fresh hold: back in the walk phase
+    expect(p.vx).toBeLessThanOrEqual(PHYS.walkMax);
   });
 
   it('runs to runMax and never beyond', () => {

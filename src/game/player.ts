@@ -87,6 +87,8 @@ export class Player implements PlayerLike {
   private airFrames = 0;
   /** Edge latch so one continuous skid raises 'skid' exactly once. */
   private skidLatch = false;
+  /** Auto-run charge frames (see PHYS.runChargeFrames). */
+  private runCharge = 0;
 
   constructor(at: SpawnPoint, character: CharacterId = 'mangiani') {
     this.x = at.x;
@@ -189,6 +191,20 @@ export class Player implements PlayerLike {
     if (dir !== 0) this.facing = dir;
     this.skidding = false;
 
+    // AUTO-RUN charge (SMB3 P-speed): sustained directional hold at near-walk
+    // speed on the ground breaks into a full run — the walk->run transition
+    // must be earnable WITHOUT the modifier ("just a slow walker" playtest).
+    // The run button still grants it instantly; airborne frames HOLD the
+    // charge (a jump mid-run must not demote the runner).
+    if (input.run) {
+      this.runCharge = PHYS.runChargeFrames;
+    } else if (dir !== 0 && this.grounded && Math.abs(this.vx) >= PHYS.walkMax * 0.9) {
+      this.runCharge = Math.min(PHYS.runChargeFrames, this.runCharge + 1);
+    } else if (dir === 0 || this.skidding) {
+      this.runCharge = Math.max(0, this.runCharge - 2);
+    }
+    const running = input.run || this.runCharge >= PHYS.runChargeFrames;
+
     if (dir === 0 || this.ducking) {
       // No intent (or ducking, which kills acceleration but keeps friction).
       if (this.grounded) {
@@ -196,10 +212,10 @@ export class Player implements PlayerLike {
         else if (this.vx < 0) this.vx = Math.min(0, this.vx + PHYS.frc);
       }
     } else {
-      const max = input.run ? PHYS.runMax : PHYS.walkMax;
+      const max = running ? PHYS.runMax : PHYS.walkMax;
       const a =
         (this.grounded ? PHYS.acc : PHYS.airAcc) *
-        (input.run ? PHYS.runBoost : 1);
+        (running ? PHYS.runBoost : 1);
       const along = this.vx * dir; // signed speed toward the intent
       if (along < 0) {
         // Reversing against current motion.
