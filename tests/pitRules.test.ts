@@ -156,7 +156,10 @@ const warpRoom = pitAct(
     b.ground(30, 41, 26);
     b.room(20, 30, 28, 33); // vault under the flank; lid rows 26..27 intact
     b.warpPipe(11, 24, 2, 22, 30, 4); // surface -> vault (cols 11..12 clear of goldbars)
-    b.warpPipe(27, 30, 4, 54, 24, 2); // vault -> surface, further along (cols 54..55 clear)
+    // vault -> surface, further along; cols 42..43 stay LEFT of the goal
+    // ceremony runway (flagpole at goal-8 = col 48) — a pipe standing in the
+    // pole->door walk would wall off the auto-walk
+    b.warpPipe(27, 30, 4, 42, 24, 2);
     b.goldbar(4, 25, 31); // loot only a warp rider can reach
   },
   { goldbar4InCarve: true },
@@ -177,7 +180,9 @@ const warpEscapePit = pitAct('Fixture Warp Escape', (b) => {
   b.spikes(36, 39, 30);
   b.ground(40, 41, 26);
   b.platform(38, 40, 25, 'brick'); // exit arc still blocked...
-  b.warpPipe(37, 29, 2, 50, 24, 2); // ...but the warp IS the exit
+  // ...but the warp IS the exit (cols 42..43: left of the goal ceremony
+  // runway — the pole at col 48 must keep a flat walk to the door)
+  b.warpPipe(37, 29, 2, 42, 24, 2);
 });
 
 /** The playtest complaint verbatim: spikes hovering 4 rows over the lane,

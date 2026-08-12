@@ -85,6 +85,8 @@ export type GameEvent =
   | 'hurt' | 'die' | 'respawn'
   // world objects
   | 'spring' | 'pipe' | 'checkpoint' | 'goal' | 'flag-plant' | 'crumble'
+  | 'pole-slide'  // grabbed the end-of-level flagpole; sliding down
+  | 'door-in'     // the hero enters the castle door and disappears inside
   // ambient (MUST be distance-gated by the emitter)
   | 'drip' | 'slot-spin' | 'gavel-slam' | 'lava-bubble'
   // boss
@@ -324,6 +326,9 @@ export interface PlayerLike {
    *  (0 = active and playing). Solo: always 0. The painter draws a bubbled
    *  player as a floating bubble drifting toward the leader. */
   bubbleT: number;
+  /** True once this body went INSIDE the goal door (end ceremony) — the
+   *  painter draws nothing for a hidden body. Reset on respawn. */
+  hidden: boolean;
   x: number;
   y: number;
   vx: number;

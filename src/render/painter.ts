@@ -22,7 +22,7 @@ import type {
   ThemeId,
   TileKind,
 } from '../core/types.ts';
-import { SOLIDITY, TILE, VIEW_H, VIEW_W } from '../core/constants.ts';
+import { GOAL, SOLIDITY, TILE, VIEW_H, VIEW_W } from '../core/constants.ts';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -2413,6 +2413,7 @@ const OUTLINE_OFFS: readonly (readonly [number, number])[] = [
 const squashState = new WeakMap<PlayerLike, { prevVy: number; squashT: number }>();
 
 export function drawPlayer(ctx: Ctx, player: PlayerLike, cam: CameraState, frame: number): void {
+  if (player.hidden) return; // inside the goal door — a hidden body draws NOTHING
   const sx = snap(player.x - cam.x);
   const sy = snap(player.y - cam.y);
   if (sx < -CULL || sx > VIEW_W + CULL || sy < -CULL || sy > VIEW_H + CULL) return;
@@ -2744,8 +2745,61 @@ export function drawBoss(ctx: Ctx, boss: BossLike, cam: CameraState, frame: numb
 }
 
 // ---------------------------------------------------------------------------
-// Goal — the castle door where the rescue reliably fails on schedule.
+// Goal — the flagpole where the score is settled, then the castle door where
+// the rescue reliably fails on schedule.
 // ---------------------------------------------------------------------------
+
+/** The end-of-level flagpole, GOAL.poleOffsetTiles before the door. Flies the
+ *  Mushroom-Kingdom pennant until 'flag-plant' fires (level.finished), then
+ *  Estrada's tiny "MISSION FAILED SUCCESSFULLY" pennant — he plants his flag
+ *  on YOUR scoring pole, because of course he does. */
+function drawFlagpole(ctx: Ctx, poleX: number, baseY: number, frame: number, planted: boolean): void {
+  const poleH = GOAL.poleHeightTiles * TILE;
+  const topY = baseY - poleH;
+  // base block bolted to the runway
+  orect(ctx, poleX - 6, baseY - 6, 12, 6, '#8a8d99');
+  // shaft: outline slab, steel fill, running highlight
+  ctx.fillStyle = OUT;
+  ctx.fillRect(poleX - 2.5, topY, 5, poleH - 5);
+  ctx.fillStyle = '#c9ccd8';
+  ctx.fillRect(poleX - 1.5, topY + 1, 3, poleH - 7);
+  ctx.fillStyle = '#f2f2f2';
+  ctx.fillRect(poleX - 1.5, topY + 1, 1, poleH - 7);
+  // gold finial ball
+  disc(ctx, poleX, topY - 2, 3, '#ffd34e', OUT);
+  const wave = Math.sin(frame / 7) * 1.5;
+  if (!planted) {
+    // Mushroom-Kingdom pennant: royal red swallow-point, white kingdom spot
+    ctx.beginPath();
+    ctx.moveTo(poleX + 2, topY + 1);
+    ctx.lineTo(poleX + 30, topY + 7 + wave);
+    ctx.lineTo(poleX + 2, topY + 13);
+    ctx.closePath();
+    ctx.fillStyle = '#c22e2e';
+    ctx.fill();
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    disc(ctx, poleX + 10, topY + 7 + wave * 0.4, 2.5, '#f5f0e6');
+  } else {
+    // Estrada's takeover flag: white rectangle, red 'MFS!', fine print
+    ctx.beginPath();
+    ctx.moveTo(poleX + 2, topY + 1);
+    ctx.lineTo(poleX + 28, topY + 2 + wave);
+    ctx.lineTo(poleX + 28, topY + 15 + wave);
+    ctx.lineTo(poleX + 2, topY + 16);
+    ctx.closePath();
+    ctx.fillStyle = '#f5f0e6';
+    ctx.fill();
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    txt(ctx, 'MFS!', poleX + 15, topY + 7 + wave * 0.7, 5, '#c22e2e');
+    ctx.fillStyle = '#b8b2a6'; // the fine print (terms of the failure apply)
+    ctx.fillRect(poleX + 6, topY + 11 + wave * 0.8, 17, 1);
+    ctx.fillRect(poleX + 6, topY + 13 + wave * 0.9, 12, 1);
+  }
+}
 
 export function drawGoal(ctx: Ctx, level: LevelLike, cam: CameraState, frame: number): void {
   // goalX/goalRow are part of the LevelLike contract (types.ts): px center of
@@ -2756,8 +2810,22 @@ export function drawGoal(ctx: Ctx, level: LevelLike, cam: CameraState, frame: nu
   const baseY = (level.goalRow + 1) * TILE - cy; // ground line under the door
   const W = TILE * 3; // 3 tiles wide
   const H = 56;
-  if (baseX < -W - CULL || baseX > VIEW_W + W + CULL) return;
-  if (baseY < -CULL - H || baseY > VIEW_H + CULL + H) return;
+  const poleSpanL = GOAL.poleOffsetTiles * TILE + 34; // pole + waving pennant
+  const spanV = Math.max(H, GOAL.poleHeightTiles * TILE + 12);
+  if (baseX < -W - CULL - poleSpanL || baseX > VIEW_W + W + CULL) return;
+  if (baseY < -CULL - spanV || baseY > VIEW_H + CULL + spanV) return;
+
+  // Ceremony state comes from the concrete Level (informal probes — the
+  // same accepted seam as checkpoint.claimed / lawyer.baseY): flagPlanted
+  // swaps the pennant once 'flag-plant' fired (falls back to finished, which
+  // flips the same frame); doorOpen holds while bodies walk in, and after.
+  const probe = level as unknown as { flagPlanted?: boolean; doorOpen?: boolean };
+  const planted = probe.flagPlanted ?? level.finished;
+  const doorOpen = probe.doorOpen === true;
+
+  // (a) THE FLAGPOLE — the classic scoring pole, 8 tiles before the door.
+  // Rendered on castle acts too: it stands inside the arena, past the boss.
+  drawFlagpole(ctx, baseX - GOAL.poleOffsetTiles * TILE, baseY, frame, planted);
 
   const pal = THEME_PAL[level.def.theme];
   const x0 = baseX - W / 2;
@@ -2787,46 +2855,43 @@ export function drawGoal(ctx: Ctx, level: LevelLike, cam: CameraState, frame: nu
   orect(ctx, x0 + W + 2, y0 + 16, 26, 12, '#f5f0e6');
   txt(ctx, 'RENT-A-', x0 + W + 15, y0 + 20, 3.5, OUT);
   txt(ctx, 'CASTLE', x0 + W + 15, y0 + 25, 3.5, OUT);
-  // double door, firmly shut, as is tradition
-  orect(ctx, baseX - 11, baseY - 22, 11, 22, '#6f4626');
-  orect(ctx, baseX, baseY - 22, 11, 22, '#6f4626');
-  ctx.fillStyle = '#ffd34e';
-  ctx.fillRect(baseX - 4, baseY - 12, 2, 2); // knobs
-  ctx.fillRect(baseX + 2, baseY - 12, 2, 2);
-  ctx.beginPath(); // arch
-  ctx.arc(baseX, baseY - 22, 11, Math.PI, 0);
-  ctx.fillStyle = '#6f4626';
-  ctx.fill();
-  ctx.strokeStyle = OUT;
-  ctx.lineWidth = 2;
-  ctx.stroke();
+  if (doorOpen) {
+    // the ceremony opened it: a dark doorway swallowing the heroes, the two
+    // panels swung back against the jambs, a faint warm glow from inside
+    ctx.fillStyle = '#1c1410';
+    ctx.fillRect(baseX - 11, baseY - 22, 22, 22);
+    ctx.beginPath(); // arch, opened dark too
+    ctx.arc(baseX, baseY - 22, 11, Math.PI, 0);
+    ctx.fill();
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+    ctx.strokeRect(baseX - 10, baseY - 21, 20, 21);
+    ctx.fillStyle = 'rgba(255,211,78,0.12)'; // someone left a lamp on
+    ctx.fillRect(baseX - 7, baseY - 16, 14, 16);
+    orect(ctx, baseX - 15, baseY - 22, 5, 22, '#6f4626'); // swung panels
+    orect(ctx, baseX + 10, baseY - 22, 5, 22, '#6f4626');
+  } else {
+    // double door, firmly shut, as is tradition
+    orect(ctx, baseX - 11, baseY - 22, 11, 22, '#6f4626');
+    orect(ctx, baseX, baseY - 22, 11, 22, '#6f4626');
+    ctx.fillStyle = '#ffd34e';
+    ctx.fillRect(baseX - 4, baseY - 12, 2, 2); // knobs
+    ctx.fillRect(baseX + 2, baseY - 12, 2, 2);
+    ctx.beginPath(); // arch
+    ctx.arc(baseX, baseY - 22, 11, Math.PI, 0);
+    ctx.fillStyle = '#6f4626';
+    ctx.fill();
+    ctx.strokeStyle = OUT;
+    ctx.lineWidth = 2;
+    ctx.stroke();
+  }
   // the sign: honesty in advertising, for once
   const signX = x0 - 14;
   orect(ctx, signX - 1, baseY - 14, 3, 14, '#8a5a2b'); // post
   orect(ctx, signX - 20, baseY - 26, 42, 13, '#e6d9a8');
   txt(ctx, 'RESCUE HERE', signX + 1, baseY - 22, 4.5, '#3a2a1e');
   txt(ctx, '(TOO LATE)', signX + 1, baseY - 17, 4, '#c22e2e');
-
-  if (level.finished) {
-    // ceremony aftermath: the flag says it all
-    const fx = baseX + W / 2 + 10;
-    orect(ctx, fx - 1, baseY - 34, 3, 34, '#a9adba');
-    disc(ctx, fx + 0.5, baseY - 35, 2, '#ffd34e', OUT);
-    const wave = Math.sin(frame / 6) * 1.5;
-    ctx.beginPath();
-    ctx.moveTo(fx + 2, baseY - 33);
-    ctx.lineTo(fx + 34, baseY - 30 + wave);
-    ctx.lineTo(fx + 34, baseY - 19 + wave);
-    ctx.lineTo(fx + 2, baseY - 16);
-    ctx.closePath();
-    ctx.fillStyle = '#f5f0e6';
-    ctx.fill();
-    ctx.strokeStyle = OUT;
-    ctx.lineWidth = 2;
-    ctx.stroke();
-    txt(ctx, 'MISSION FAILED', fx + 18, baseY - 28 + wave / 2, 3.5, '#c22e2e');
-    txt(ctx, 'SUCCESSFULLY', fx + 18, baseY - 23 + wave / 2, 3.5, '#c22e2e');
-  }
 }
 
 // ---------------------------------------------------------------------------

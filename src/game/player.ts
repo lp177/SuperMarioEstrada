@@ -57,6 +57,9 @@ export class Player implements PlayerLike {
   /** Co-op bubble countdown (see PlayerLike). Solo: always 0. The Level owns
    *  every transition; the player itself never reads or ticks it. */
   bubbleT = 0;
+  /** Inside the goal door (end ceremony) — the painter skips hidden bodies.
+   *  The Level's ceremony sets it; respawn() clears it. */
+  hidden = false;
   x: number;
   y: number;
   vx = 0;

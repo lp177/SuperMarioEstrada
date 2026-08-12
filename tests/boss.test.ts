@@ -44,6 +44,7 @@ function stubPlayer(x: number, y: number): PlayerLike {
   return {
     character: 'mangiani',
     bubbleT: 0,
+    hidden: false,
     x,
     y,
     vx: 0,

@@ -19,6 +19,7 @@ import { LEVELS } from '../src/levels/index.ts';
 import { CASTLES, WORLD_MAPS } from '../src/levels/maps.ts';
 import { checkAct, flowBot } from './actContract.ts';
 import { Level } from '../src/game/level.ts';
+import { TILE } from '../src/core/constants.ts';
 import {
   brickGallery,
   checkpointRest,
@@ -218,7 +219,9 @@ describe('checkAct fixtures', () => {
     const level = new Level(tinyAct());
     const bot = flowBot(level);
     expect(bot.finished).toBe(true);
-    expect(bot.maxX).toBeGreaterThanOrEqual(level.goalX);
+    // the goal ceremony walks the hero INTO the door and stops 4px short of
+    // goalX — a cleared run now tops out at the doorstep, not past it
+    expect(bot.maxX).toBeGreaterThanOrEqual(level.goalX - TILE);
     expect(bot.stallFrames).toBeLessThanOrEqual(150);
     expect(bot.frames).toBeLessThan(1500); // 60 flat tiles: a quick jog
   });

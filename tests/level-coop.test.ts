@@ -219,19 +219,26 @@ describe('co-op: bubbles (death is free, wipes are not)', () => {
 });
 
 describe('co-op: goal', () => {
-  it('P2 alone crossing the goal runs the ceremony for the team', () => {
+  it('P2 alone crossing the pole runs the ceremony for the team', () => {
     const level = flatCoop(40);
     let goalFrame = -1;
+    let doorFrame = -1;
     let flagFrame = -1;
-    for (let i = 0; i < 900 && flagFrame < 0; i++) {
+    for (let i = 0; i < 1200 && flagFrame < 0; i++) {
       const evs = level.update(inp(), inp({ right: true, run: true }));
       if (goalFrame < 0 && evs.includes('goal')) goalFrame = i;
+      if (evs.includes('door-in')) doorFrame = i; // LAST entry arms the flag
       if (evs.includes('flag-plant')) flagFrame = i;
     }
     expect(goalFrame).toBeGreaterThan(0);
-    expect(flagFrame).toBe(goalFrame + 90);
+    // P2 grabbed the pole; the idle P1 was auto-walked in from the back, so
+    // the flag beat (90f) starts only after the LAST body entered the door.
+    expect(flagFrame).toBe(doorFrame + 90);
+    expect(flagFrame).toBeGreaterThan(goalFrame + 90);
     expect(level.finished).toBe(true);
-    expect(level.players[0]!.x).toBeLessThan(level.goalX); // P1 never crossed
+    expect(level.players[0]!.hidden).toBe(true); // both went INSIDE
+    expect(level.players[1]!.hidden).toBe(true);
+    expect(level.players[0]!.x).toBeLessThan(level.goalX); // P1 never crossed the door line
   });
 });
 
@@ -318,9 +325,11 @@ describe('solo: regression (the classic tape)', () => {
     expect(level.player.dead).toBe(false);
     expect(level.player.invulnT).toBeGreaterThan(0);
 
-    // 5. sprint to the goal: 'goal' exactly once, 'flag-plant' exactly 90
-    // frames later, then finished
+    // 5. sprint to the flagpole: 'goal' exactly once at the grab, then the
+    // slide, the walk into the door, and 'flag-plant' exactly 90 frames
+    // after the door entry — then finished
     let goalFrame = -1;
+    let doorFrame = -1;
     let flagFrame = -1;
     let goals = 0;
     for (let i = 0; i < 1200 && flagFrame < 0; i++) {
@@ -328,11 +337,15 @@ describe('solo: regression (the classic tape)', () => {
       tape.push(...evs);
       goals += evs.filter((e) => e === 'goal').length;
       if (goalFrame < 0 && evs.includes('goal')) goalFrame = i;
+      if (doorFrame < 0 && evs.includes('door-in')) doorFrame = i;
       if (evs.includes('flag-plant')) flagFrame = i;
     }
     expect(goals).toBe(1);
-    expect(flagFrame).toBe(goalFrame + 90);
+    expect(tape).toContain('pole-slide');
+    expect(doorFrame).toBeGreaterThan(goalFrame);
+    expect(flagFrame).toBe(doorFrame + 90);
     expect(level.finished).toBe(true);
+    expect(level.player.hidden).toBe(true);
 
     // 6. and the tape carries zero two-hero noise: solo play never emits
     // 'hero-swap' on its own

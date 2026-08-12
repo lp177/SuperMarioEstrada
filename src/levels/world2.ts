@@ -405,8 +405,12 @@ export const world2: LevelDef[] = [
       c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 147
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'chipstack', 'rat'] }); // -> 162
       c = goldbarVault(b, c.endX, c.endRow, { index: 3 }); // -> 167 (hidden bar 3)
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 173 (easy bar 2)
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 178
+      // pocket BEFORE perch: the ceremony runway (flagpole at goal-8 = col
+      // 174 to the door) must be flat — a pocket slot there swallowed the
+      // post-pole walk. The perch's flat ground now carries the pole, and
+      // its platform doubles as the max-height-grab springboard.
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 172
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 178 (easy bar 2)
       finishTo(b, c.endX, c.endRow, 190); // coins total: 48
     },
   },
@@ -541,19 +545,23 @@ export const world2: LevelDef[] = [
       c = skyLadder(b, c.endX, c.endRow, { index: 2 }); // -> 162
       c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 167
       c = spikePit(b, c.endX, c.endRow, { gap: 5 }); // -> 178
+      // pocket BEFORE the antechamber: the ceremony runway (flagpole at
+      // goal-8 = col 184 to the door) must be flat — the pocket's slot
+      // there swallowed the post-pole walk.
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 183
       b.ground(c.endX, c.endX + 5, c.endRow); // vault antechamber (bar 4's old perch spot)
-      c = { endX: c.endX + 6, endRow: c.endRow }; // -> 184
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 189
-      finishTo(b, c.endX, c.endRow, 200); // coins total: 43 + 15 vault
-      // THE MONEY VAULT: flush drain grate at cols 180-181 (press down) into
-      // the room under the final stretch — goldbar 4 waits at the far end
-      // behind the coin hoard; the return shaft at cols 190-191 surfaces two
-      // tiles before the goal door. Laid after the chain (rule 7).
+      c = { endX: c.endX + 6, endRow: c.endRow }; // -> 189
+      finishTo(b, c.endX, c.endRow, 200); // coins total: 43 + 13 vault
+      // THE MONEY VAULT: flush drain grate at cols 184-185 (press down —
+      // right at the flagpole's feet, because of course the drain is there)
+      // into the room under the final stretch — goldbar 4 waits at the far
+      // end behind the coin hoard; the return shaft at cols 190-191 surfaces
+      // two tiles before the goal door. Laid after the chain (rule 7).
       b.room(184, 196, 29, 32); // vault: floor row 33
-      b.warpPipe(180, 25, 2, 184, 31, 2); // drain grate -> vault floor
+      b.warpPipe(184, 25, 2, 186, 31, 2); // drain grate -> vault floor
       b.warpPipe(190, 31, 2, 190, 25, 2); // the same shaft back up
-      b.coinRow(187, 189, 31); // the hoard: 15 coins around the shaft
-      b.coinRow(187, 189, 32);
+      b.coinRow(188, 189, 31); // the hoard around the shaft
+      b.coinRow(188, 189, 32);
       b.coinRow(192, 196, 31);
       b.coinRow(192, 195, 32);
       b.goldbar(4, 196, 32); // the take, vaulted where they think it is safe

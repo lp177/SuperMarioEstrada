@@ -41,6 +41,7 @@ import {
   AMBIENT_RANGE,
   BACKTRACK_SLACK,
   CAMERA,
+  GOAL,
   PHYS,
   TILE,
   VIEW_H,
@@ -67,8 +68,14 @@ import { Bowsonaro } from './boss.ts';
 const ENEMY_DYING_FRAMES = 20;
 /** Frames between death and respawn at the checkpoint. */
 const RESPAWN_DELAY = 90;
-/** Flag ceremony length: 'goal' fires, then this many frames later 'flag-plant'. */
+/** Flag-plant beat: the LAST body enters the door, then this many frames
+ *  later 'flag-plant' fires and the act is finished. */
 const GOAL_CEREMONY_FRAMES = 90;
+/** A walking body counts as "at the door" this many px before goalX. */
+const DOOR_INSET_PX = 4;
+/** Ceremony stall-proofing: a walker that has not reached the door after this
+ *  many frames (10s — any real runway takes < 3s) slips inside off-screen. */
+const CEREMONY_WALK_TIMEOUT = 600;
 /** Frames a crumble tile survives after first being stood on. */
 const CRUMBLE_FUSE = 30;
 /** Player must be this many px past arena.x0 before the staged fight starts. */
@@ -122,6 +129,10 @@ const NO_INPUT: InputState = Object.freeze({
   pausePressed: false,
   swapPressed: false,
 });
+
+/** The ceremony's substituted input: every locked body auto-walks right,
+ *  presses nothing. Real player intent is ignored from grab to flag. */
+const CEREMONY_WALK: InputState = Object.freeze({ ...NO_INPUT, right: true });
 
 /** Ambient family — belt-and-braces distance gate on top of the emitters'
  *  own gating (the emitter MUST gate; Level drops strays anyway). */
@@ -181,7 +192,6 @@ export class Level implements LevelLike {
 
   readonly goalX: number;
   readonly goalRow: number;
-  private readonly goalY: number;
   private readonly blockContents: Map<string, BlockContents>;
   private readonly arena: { x0: number; x1: number; floorRow: number } | null;
   private readonly rng: Rng;
@@ -207,8 +217,20 @@ export class Level implements LevelLike {
   private pendingSwapAt: SpawnPoint | null = null;
   /** Counts down after death; at 0 the player respawns. -1 = idle. */
   private deathTimer = -1;
-  /** Counts down after 'goal'; at 0 'flag-plant' fires. -1 = idle. */
-  private goalTimer = -1;
+  /** End-of-level ceremony (null = not started). Replaces the old goal-line
+   *  timer: pole grab -> slide ('pole') -> auto-walk ('walk', bodies vanish
+   *  into the door) -> flag-plant beat ('plant'). Never cleared once set —
+   *  `ceremony`/`doorOpen` keep reading it through the sting. */
+  private ceremonyState: {
+    /** Frames since the walk phase began — the stall-proof fallback below. */
+    walkT?: number;
+    phase: 'pole' | 'walk' | 'plant';
+    rider: PlayerLike;
+    /** Frames spent in 'plant'. */
+    plantT: number;
+    /** Bodies already inside the door (hidden, frozen). */
+    inside: Set<PlayerLike>;
+  } | null = null;
   /** Crumble fuses keyed by `${tx},${ty}`; tiles never respawn. */
   private readonly crumbleFuses = new Map<string, number>();
   /** Level-side boss hit stagger for pens. */
@@ -222,7 +244,6 @@ export class Level implements LevelLike {
     this.map = built.map;
     this.goalX = built.goalX;
     this.goalRow = built.goalRow;
-    this.goalY = (built.goalRow + 0.5) * TILE;
     this.blockContents = built.blockContents;
     this.arena = built.arena;
     this.warps = built.warps;
@@ -301,6 +322,29 @@ export class Level implements LevelLike {
   get warping(): boolean {
     return this.activeWarp !== null;
   }
+  /** True from the pole grab on — the end-of-level ceremony is performing.
+   *  Player intent is locked out and contacts/hazards ignore the bodies. */
+  get ceremony(): boolean {
+    return this.ceremonyState !== null;
+  }
+  /** True once 'flag-plant' fired — the painter swaps the pole's pennant to
+   *  Estrada's "MISSION FAILED SUCCESSFULLY" flag off this. */
+  get flagPlanted(): boolean {
+    return this._finished;
+  }
+  /** The castle door stands OPEN (dark doorway) while bodies walk in and
+   *  stays open for the aftermath — the painter reads this. */
+  get doorOpen(): boolean {
+    return this.ceremonyState !== null && this.ceremonyState.phase !== 'pole';
+  }
+  /** Flagpole x (px): GOAL.poleOffsetTiles tiles before the door. */
+  get poleX(): number {
+    return this.goalX - GOAL.poleOffsetTiles * TILE;
+  }
+  /** Ground line the pole stands on (px) — also the walk row's floor. */
+  private get poleBaseY(): number {
+    return (this.goalRow + 1) * TILE;
+  }
 
   /** 0..1 gameplay intensity hint for the music system. */
   get intensity(): number {
@@ -341,16 +385,23 @@ export class Level implements LevelLike {
     // 2. player physics (a bubbled body floats instead). Player events are
     // read at the END of the step: hurt() / bounce() / respawn() may append
     // to player.events mid-step and reading early would drop them (they get
-    // cleared by the next update()).
-    for (let i = 0; i < this.players.length; i++) {
-      const p = this.players[i]!;
-      if (p.bubbleT > 0) this.updateBubble(p, inputs[i]!);
-      else p.update(inputs[i]!, this.map);
+    // cleared by the next update()). During the goal ceremony the bodies are
+    // performers, not players: real intent is ignored (see updateCeremony).
+    if (this.ceremonyState) {
+      this.updateCeremony();
+    } else {
+      for (let i = 0; i < this.players.length; i++) {
+        const p = this.players[i]!;
+        if (p.bubbleT > 0) this.updateBubble(p, inputs[i]!);
+        else p.update(inputs[i]!, this.map);
+      }
     }
 
     // 2b. warp entry: standing on a warp pipe's mouth and pressing down.
     // Only ONE warp can be active at a time — first come (P1 breaks ties).
-    for (let i = 0; i < this.players.length && !this.activeWarp; i++) {
+    // Never during the ceremony: the substituted inputs press nothing, but
+    // the check below reads the REAL inputs, so it must be gated too.
+    for (let i = 0; i < this.players.length && !this.activeWarp && !this.ceremonyState; i++) {
       const p = this.players[i]!;
       if (p.dead || p.bubbleT > 0 || !p.grounded || !inputs[i]!.down) continue;
       for (const w of this.warps) {
@@ -402,6 +453,8 @@ export class Level implements LevelLike {
       const s = e as EntityLike & { triggered?: boolean };
       if (s.triggered) {
         s.triggered = false;
+        // never launch a performer mid-ceremony — the march must not break
+        if (this.ceremonyState) continue;
         const rider = this.springTargets.get(e) ?? this.player;
         if (!rider.dead) {
           rider.bounce(false);
@@ -423,27 +476,30 @@ export class Level implements LevelLike {
     // 8. crumble scheduling + fuse ticking
     this.updateCrumble();
 
-    // 9. goal ceremony — ANY active body crossing triggers it. A castle goal
+    // 9. goal ceremony trigger — the FLAGPOLE, 8 tiles before the door. The
+    // FIRST active body past the pole's x grabs it (P1 breaks same-frame
+    // ties) and the whole team is locked into the performance. A castle pole
     // stays sealed until the staged encounter resolved — Bowsonaro must
-    // escape (or, in rage, actually fall). Without this a runner can sprint
-    // past the boss and finish the act mid-"fight".
+    // escape (or, in rage, actually fall). Without this a runner could start
+    // the ceremony mid-"fight".
     const bossResolved =
       this.boss === null ||
       this.boss.phase === 'escape' ||
       this.boss.phase === 'defeated';
+    // (activeWarp guard: a warp entered THIS frame must finish its ride
+    // before the pole can grab the rider — two machines must never share a
+    // body; later frames are covered by the step-1b early return.)
     if (
       !this._finished &&
-      this.goalTimer < 0 &&
-      bossResolved &&
-      this.anyActiveAtGoal()
+      this.ceremonyState === null &&
+      this.activeWarp === null &&
+      bossResolved
     ) {
-      this.emitAt('goal', this.goalX, this.goalY);
-      this.goalTimer = GOAL_CEREMONY_FRAMES;
-    } else if (this.goalTimer > 0) {
-      this.goalTimer--;
-      if (this.goalTimer === 0) {
-        this.emitAt('flag-plant', this.goalX, this.goalY);
-        this._finished = true;
+      for (const p of this.players) {
+        if (this.isActive(p) && p.x >= this.poleX) {
+          this.startCeremony(p);
+          break;
+        }
       }
     }
 
@@ -522,13 +578,6 @@ export class Level implements LevelLike {
       }
     }
     return best ?? this.player;
-  }
-
-  private anyActiveAtGoal(): boolean {
-    for (const p of this.players) {
-      if (this.isActive(p) && p.x >= this.goalX) return true;
-    }
-    return false;
   }
 
   private jumpHeldFor(p: PlayerLike): boolean {
@@ -615,9 +664,115 @@ export class Level implements LevelLike {
   }
 
   // -------------------------------------------------------------------------
+  // The goal ceremony — pole grab, slide, auto-walk, door, flag (step 9 arms
+  // it; updateCeremony replaces step 2's player physics while it runs).
+  // -------------------------------------------------------------------------
+
+  /** The grab: pay the height bonus ONCE, snap the rider onto the pole and
+   *  lock the whole team into the performance. h = 0 at the base, 1 at the
+   *  pennant; a top grab gets the notary's certification on top. */
+  private startCeremony(rider: PlayerLike): void {
+    const poleX = this.poleX;
+    const h = clamp(
+      (this.poleBaseY - rider.y) / (GOAL.poleHeightTiles * TILE),
+      0,
+      1,
+    );
+    this.stats.coins += Math.round(h * GOAL.bonusMaxCoins);
+    rider.x = poleX; // classic: the grab snaps the body onto the pole
+    rider.vx = 0;
+    rider.vy = GOAL.slideSpeed; // reads as a controlled slide (fall pose)
+    rider.grounded = false;
+    rider.facing = 1;
+    this.emitAt('goal', poleX, rider.y);
+    // the notary certifies your maximum height — ka-ching
+    if (h >= GOAL.topGrabFrac) this.emitAt('certify', poleX, rider.y);
+    this.emitAt('pole-slide', poleX, rider.y);
+    this.ceremonyState = { phase: 'pole', rider, plantT: 0, inside: new Set() };
+  }
+
+  /** One ceremony frame. The rider slides down the pole (manual, collision-
+   *  free — the pole owns the body), every other active body auto-walks
+   *  right on real physics with the locked CEREMONY_WALK input; a body
+   *  reaching the door goes hidden ('door-in' once each); bubbled/dead
+   *  partners skip the walk and go straight inside. 90 frames after the
+   *  LAST body enters, 'flag-plant' fires and the act is finished. */
+  private updateCeremony(): void {
+    const c = this.ceremonyState;
+    if (!c) return;
+    const doorX = this.goalX - DOOR_INSET_PX;
+    for (const p of this.players) {
+      if (c.inside.has(p)) {
+        // inside the castle: frozen; stale events must never re-emit
+        p.events.length = 0;
+        p.bumpedTile = null;
+        continue;
+      }
+      if (p === c.rider && c.phase === 'pole') {
+        p.events.length = 0;
+        p.bumpedTile = null;
+        const restY = this.poleBaseY - p.halfH;
+        p.x = this.poleX;
+        p.vx = 0;
+        p.vy = GOAL.slideSpeed;
+        p.y = Math.min(p.y + GOAL.slideSpeed, restY);
+        if (p.y >= restY) {
+          // dismount: hand the body back to real physics for the walk
+          p.vy = 0;
+          p.grounded = true;
+          c.phase = 'walk';
+        }
+        continue;
+      }
+      if (!this.isActive(p)) {
+        // bubbled/dead partner: no walk of shame, straight to hidden
+        p.events.length = 0;
+        p.bumpedTile = null;
+        p.bubbleT = 0;
+        p.hidden = true;
+        c.inside.add(p);
+        continue;
+      }
+      // auto-walk toward the door on real physics; the cap keeps the march
+      // at ceremony pace instead of carrying run-up momentum
+      if (p.vx > GOAL.walkSpeed) p.vx = GOAL.walkSpeed;
+      p.update(CEREMONY_WALK, this.map);
+      // Stall-proof fallback: a co-op partner wedged behind terrain far from
+      // the runway must never freeze the ceremony forever — after the grace
+      // window they simply slip inside off-screen (the show must go on).
+      const stalled = (c.walkT ?? 0) > CEREMONY_WALK_TIMEOUT;
+      if (p.x >= doorX || stalled) {
+        p.x = doorX;
+        p.vx = 0;
+        p.hidden = true; // the painter draws nothing for a hidden body
+        c.inside.add(p);
+        this.emitAt('door-in', this.goalX, this.poleBaseY - TILE);
+      }
+    }
+    if (c.phase !== 'pole') c.walkT = (c.walkT ?? 0) + 1;
+    if (c.phase === 'plant') {
+      c.plantT++;
+      if (c.plantT === GOAL_CEREMONY_FRAMES) {
+        this.emitAt(
+          'flag-plant',
+          this.poleX,
+          this.poleBaseY - GOAL.poleHeightTiles * TILE,
+        );
+        this._finished = true;
+      }
+    } else if (c.phase === 'walk' && c.inside.size === this.players.length) {
+      // everyone is inside; the flag-plant beat starts NEXT frame, so the
+      // 'flag-plant' lands exactly GOAL_CEREMONY_FRAMES after the last entry
+      c.phase = 'plant';
+      c.plantT = 0;
+    }
+  }
+
+  // -------------------------------------------------------------------------
   // THE ONLY damage path — per body now, still the single caller of hurt().
   // -------------------------------------------------------------------------
   private damage(p: PlayerLike, fromX: number): void {
+    if (this.ceremonyState) return; // performers cannot be hurt
     if (p.dead || p.bubbleT > 0) return;
     const hurt = p.hurt(fromX);
     if (!hurt) return;
@@ -629,6 +784,7 @@ export class Level implements LevelLike {
 
   /** Instant death (lava, void): bypasses sizes and invulnerability. */
   private kill(p: PlayerLike): void {
+    if (this.ceremonyState) return; // death cannot occur during the ceremony
     if (p.dead || p.bubbleT > 0) return;
     p.dead = true;
     p.vx = 0;
@@ -745,6 +901,8 @@ export class Level implements LevelLike {
   // Step 4: entity contact resolution (target = the body the entity acted on)
   // -------------------------------------------------------------------------
   private resolveContact(contact: Contact, e: EntityLike, target: PlayerLike): void {
+    // ceremony bodies are performing, not playing: every contact is ignored
+    if (this.ceremonyState) return;
     if (contact !== 'none' && target.dead) return; // dead player is inert
     switch (contact) {
       case 'none':
@@ -827,7 +985,9 @@ export class Level implements LevelLike {
   private updatePensAndShells(inputs: readonly InputState[]): void {
     // throw — a fresh press fires immediately; HOLDING fire keeps throwing on
     // the penRepeat cadence (classic hold-to-fire). The penMax pool is SHARED.
-    for (let i = 0; i < this.players.length; i++) {
+    // Ceremony bodies never throw: their intent is locked (real inputs are
+    // read here, so the gate is explicit).
+    for (let i = 0; i < this.players.length && !this.ceremonyState; i++) {
       const p = this.players[i]!;
       if (this.penCooldown[i]! > 0) this.penCooldown[i] = this.penCooldown[i]! - 1;
       const inp = inputs[i]!;
@@ -915,7 +1075,9 @@ export class Level implements LevelLike {
     const target = this.nearestActive(boss.x, boss.y);
     this.ctx.player = target;
     const contact = boss.update(this.ctx);
-    if (!target.dead) {
+    // ceremony bodies ignore boss contact too (he has already left the stage
+    // by then — bossResolved gates the pole — but belt and braces)
+    if (!target.dead && !this.ceremonyState) {
       switch (contact) {
         case 'none':
           break;
@@ -973,6 +1135,9 @@ export class Level implements LevelLike {
   // Step 7: hazard tiles + void — sampled per active body
   // -------------------------------------------------------------------------
   private checkHazards(): void {
+    // hazards are skipped for the whole cast during the ceremony (the finish
+    // runway is flat and safe by act contract; this is the guarantee)
+    if (this.ceremonyState) return;
     for (const p of this.players) {
       if (p.dead || p.bubbleT > 0) continue;
 
@@ -1006,6 +1171,8 @@ export class Level implements LevelLike {
   // -------------------------------------------------------------------------
   private updateCrumble(): void {
     for (const p of this.players) {
+      // performers never arm new fuses (armed ones keep ticking below)
+      if (this.ceremonyState) break;
       if (p.dead || p.bubbleT > 0 || !p.grounded) continue;
       const footY = p.y + p.halfH + 1;
       const ty = Math.floor(footY / TILE);

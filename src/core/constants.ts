@@ -150,6 +150,27 @@ export const ACT_RULES = {
   idleFrames: 600,
 } as const;
 
+// ---------------------------------------------------------------------------
+// End-of-level ceremony: the classic flagpole, adapted to the fiction. A tall
+// pole stands GOAL.poleOffsetTiles before the castle door; grabbing it higher
+// pays more of the coin bonus, then the hero slides down, auto-walks to the
+// door and disappears inside before Estrada plants his flag.
+// ---------------------------------------------------------------------------
+export const GOAL = {
+  /** The pole stands this many tiles BEFORE the door (pole x = goalX - offset·TILE). */
+  poleOffsetTiles: 8,
+  /** Pole height in tiles, ground line to pennant. */
+  poleHeightTiles: 9,
+  /** Slide speed down the pole, px/frame. */
+  slideSpeed: 2.5,
+  /** Auto-walk speed toward the door after the dismount, px/frame. */
+  walkSpeed: 1.6,
+  /** A grab at the very top (h = 1) pays this many coins; bonus = round(h·max). */
+  bonusMaxCoins: 20,
+  /** Grabs at h >= this fraction are notary-certified ('certify' fires too). */
+  topGrabFrac: 0.9,
+} as const;
+
 export const STORAGE_KEYS = {
   settings: 'sme.settings.v1',
   progress: 'sme.progress.v1',

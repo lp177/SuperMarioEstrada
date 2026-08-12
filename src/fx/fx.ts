@@ -149,6 +149,18 @@ export const FX_TABLE: Record<GameEvent, FxSpec | null> = {
       { kind: 'shard', n: 5, colors: ['#d8cebd', '#b8ae9c'], spread: 1.2, gravity: 0.25 },
     ],
   },
+  // Flagpole slide: gold sparkles rubbed off the pole at the grab point.
+  // Deliberately NO shake and NO hit-stop — triumph, not impact.
+  'pole-slide': {
+    particles: [
+      { kind: 'sparkle', n: 10, colors: ['#ffd54a', '#fff3b0', '#ffffff'], spread: 1.2 },
+    ],
+  },
+  // A dust puff at the doorstep as a hero disappears inside. Small and dry;
+  // no shake — a door closing is furniture, not an explosion.
+  'door-in': {
+    particles: [{ kind: 'dust', n: 6, colors: ['#c9bfae', '#8a5a2b'], spread: 1.3 }],
+  },
   // ambient — tiny LOCAL particles only, ZERO shake: the emitter may be
   // hundreds of px away; an off-screen source must never kick the camera.
   drip: { particles: [{ kind: 'dust', n: 2, colors: ['#7fd4ff'], spread: 0.5 }] },

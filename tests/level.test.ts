@@ -10,7 +10,7 @@ import type {
   LevelBuilderLike,
   LevelDef,
 } from '../src/core/types.ts';
-import { ACT_RULES, BACKTRACK_SLACK, TILE } from '../src/core/constants.ts';
+import { ACT_RULES, BACKTRACK_SLACK, GOAL, TILE } from '../src/core/constants.ts';
 import { Level } from '../src/game/level.ts';
 
 function inp(over: Partial<InputState> = {}): InputState {
@@ -163,30 +163,124 @@ describe('Level', () => {
     expect(level.stats.deaths).toBe(0);
   });
 
-  it("goal ceremony: 'goal' once, 'flag-plant' 90 frames later, then finished", () => {
+  it("goal ceremony: goal -> pole-slide -> door-in -> flag-plant, finished only at the flag", () => {
     const level = new Level(
       makeDef(40, (b) => {
         b.ground(0, 39, 30);
         b.start(3, 29);
-        b.goal(12, 29);
+        b.goal(20, 29);
       }),
     );
-    let goalFrame = -1;
-    let flagFrame = -1;
+    const first = new Map<GameEvent, number>();
     let goalCount = 0;
-    for (let i = 0; i < 600 && flagFrame < 0; i++) {
+    let goalSrcX = -1;
+    for (let i = 0; i < 900 && !level.finished; i++) {
       const evs = level.update(inp({ right: true }));
       goalCount += evs.filter((e) => e === 'goal').length;
-      if (goalFrame < 0 && evs.includes('goal')) {
-        goalFrame = i;
-        expect(level.finished).toBe(false);
+      for (const ev of evs) if (!first.has(ev)) first.set(ev, i);
+      if (evs.includes('goal')) {
+        goalSrcX = level.eventSources.get('goal')?.x ?? -1;
       }
-      if (evs.includes('flag-plant')) flagFrame = i;
+      if (!evs.includes('flag-plant')) expect(level.finished).toBe(false);
     }
-    expect(goalFrame).toBeGreaterThan(0);
+    // the ceremony starts at the POLE, 8 tiles before the door — the trigger
+    // is no longer an invisible x-line at the facade
     expect(goalCount).toBe(1);
-    expect(flagFrame).toBe(goalFrame + 90);
+    expect(goalSrcX).toBe(level.goalX - GOAL.poleOffsetTiles * TILE);
+    const goalF = first.get('goal')!;
+    const slideF = first.get('pole-slide')!;
+    const doorF = first.get('door-in')!;
+    const flagF = first.get('flag-plant')!;
+    expect(goalF).toBeGreaterThan(0);
+    expect(slideF).toBeGreaterThanOrEqual(goalF); // slide starts at the grab
+    expect(doorF).toBeGreaterThan(slideF); // then the walk to the door
+    expect(flagF).toBe(doorF + 90); // the flag-plant beat, 90f after entry
     expect(level.finished).toBe(true);
+    // the hero is INSIDE the castle, not wandering behind the set
+    expect(level.player.hidden).toBe(true);
+    expect(level.player.x).toBeLessThanOrEqual(level.goalX);
+  });
+
+  it('pole grab height pays the bonus: a platform jump-grab out-earns a walk grab and certifies', () => {
+    // Flat act with a raised platform ending just before the pole (pole x =
+    // goalX - 8 tiles = tile 32.5; platform top surface row 22 ~= 8 tiles up).
+    const build = (withPlatform: boolean) => (b: LevelBuilderLike): void => {
+      b.ground(0, 59, 30);
+      b.start(3, 29);
+      if (withPlatform) b.platform(24, 30, 22);
+      b.goal(40, 29);
+    };
+
+    // WALK grab: sprint along the ground into the pole — grabs at the base.
+    const low = new Level(makeDef(60, build(false)));
+    let lowEvs: GameEvent[] = [];
+    for (let i = 0; i < 400 && !lowEvs.includes('goal'); i++) {
+      lowEvs = lowEvs.concat(low.update(inp({ right: true, run: true })));
+    }
+    expect(lowEvs).toContain('goal');
+    expect(lowEvs).toContain('pole-slide');
+    expect(lowEvs).not.toContain('certify'); // base grab: no notary stamp
+    const lowCoins = low.stats.coins;
+
+    // JUMP grab: run off the platform and leap at the lip — hits the pole
+    // near the pennant, the notary certifies the maximum height.
+    const high = new Level(makeDef(60, build(true)));
+    const hp = high.player;
+    hp.x = 28 * TILE + 8; // on the platform
+    hp.y = 22 * TILE - hp.halfH;
+    hp.vy = 0;
+    run(high, 2, inp()); // settle grounded
+    let highEvs: GameEvent[] = [];
+    let jumped = false;
+    for (let i = 0; i < 400 && !highEvs.includes('goal'); i++) {
+      const jumpNow = !jumped && hp.grounded && hp.x > 30 * TILE + 2;
+      if (jumpNow) jumped = true;
+      highEvs = highEvs.concat(
+        high.update(inp({ right: true, jump: jumped, jumpPressed: jumpNow })),
+      );
+    }
+    expect(highEvs).toContain('goal');
+    expect(highEvs).toContain('certify'); // top grab: certified, ka-ching
+    const highCoins = high.stats.coins;
+
+    expect(highCoins).toBeGreaterThan(lowCoins);
+    expect(highCoins).toBeLessThanOrEqual(GOAL.bonusMaxCoins);
+  });
+
+  it('co-op ceremony: single bonus award, both bodies end hidden inside the door', () => {
+    const level = new Level(
+      makeDef(40, (b) => {
+        b.ground(0, 39, 30);
+        b.start(3, 29);
+        b.goal(20, 29);
+      }),
+      { coop: true },
+    );
+    const runCoop = (frames: number): GameEvent[] => {
+      const all: GameEvent[] = [];
+      for (let i = 0; i < frames; i++) all.push(...level.update(inp(), inp()));
+      return all;
+    };
+    runCoop(10); // settle both on the ground
+    const poleX = level.goalX - GOAL.poleOffsetTiles * TILE;
+    // park BOTH bodies past the pole line on the same frame: P1 rides (tie
+    // breaks to P1) and the height bonus must be paid exactly once
+    level.players[0]!.x = poleX + 1;
+    level.players[1]!.x = poleX + 1;
+    const grabEvs = runCoop(1);
+    expect(grabEvs).toContain('goal');
+    expect(grabEvs).toContain('pole-slide');
+    // both grounded at the base: h = halfH/poleH -> round(...) = 1 coin.
+    // A double award would have paid 2.
+    expect(level.stats.coins).toBe(1);
+
+    const rest = runCoop(600);
+    expect(rest.filter((e) => e === 'door-in').length).toBe(2); // once per body
+    expect(rest).toContain('flag-plant');
+    expect(level.finished).toBe(true);
+    expect(level.players[0]!.hidden).toBe(true);
+    expect(level.players[1]!.hidden).toBe(true);
+    expect(level.stats.coins).toBe(1); // still the single grab award
   });
 
   it('an idle player near nothing hears NOTHING (far gavel + lawyer stay silent)', () => {
@@ -330,21 +424,27 @@ describe('Level', () => {
       boss: true,
     };
     const level = new Level(def);
-    // Sprint the player straight to the goal line, past the un-fought boss.
+    // Sprint the player straight past the un-fought boss — beyond BOTH the
+    // pole line (goalX - 8 tiles) and the door line.
     level.player.x = level.goalX + 4;
     const evs = run(level, 200, inp());
-    // The arena engaged, but crossing the goal must NOT finish the act.
+    // The arena engaged, but crossing pole/goal must NOT start the ceremony.
     expect(evs).toContain('boss-intro');
     expect(evs).not.toContain('goal');
+    expect(evs).not.toContain('pole-slide');
+    expect(level.ceremony).toBe(false);
     expect(level.finished).toBe(false);
 
     // Resolve the encounter externally (pens do this in real play): hp 0 ->
-    // the staged escape -> the goal unseals -> ceremony completes.
+    // the staged escape -> the pole unseals -> full ceremony completes.
     level.boss!.hp = 0;
     const after = run(level, 400, inp());
     expect(after).toContain('boss-escape');
     expect(after).toContain('goal');
+    expect(after).toContain('pole-slide');
+    expect(after).toContain('door-in');
     expect(after).toContain('flag-plant');
     expect(level.finished).toBe(true);
+    expect(level.player.hidden).toBe(true);
   });
 });

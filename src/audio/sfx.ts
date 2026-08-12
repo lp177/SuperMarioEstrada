@@ -112,6 +112,19 @@ const RECIPES: Record<GameEvent, RecipeSpec> = {
     { wave: 'square', f0: 784, f1: 784, dur: 14, vol: 0.25, arp: [0, 5], delay: 10 },
   ],
   crumble: { wave: 'noise', f0: 500, f1: 200, dur: 12, vol: 0.2, slide: true },
+  // Flagpole grab: a long descending ZIP as the hero slides — pitch rides
+  // down nearly three octaves with a whisper of friction hiss underneath.
+  'pole-slide': [
+    { wave: 'square', f0: 1400, f1: 180, dur: 34, vol: 0.25, slide: true },
+    { wave: 'noise', f0: 3000, f1: 700, dur: 22, vol: 0.1, slide: true },
+  ],
+  // The castle door: wooden THUNK, a latch clack, then the hinge CREAKS the
+  // hero inside (slow rising saw, quiet — furniture, not fanfare).
+  'door-in': [
+    { wave: 'triangle', f0: 150, f1: 55, dur: 8, vol: 0.45, slide: true },
+    { wave: 'noise', f0: 700, f1: 250, dur: 6, vol: 0.2, slide: true },
+    { wave: 'sawtooth', f0: 70, f1: 160, dur: 20, vol: 0.12, slide: true, delay: 6 },
+  ],
 
   // -- ambient (emitters distance-gate; recipes stay QUIET regardless) ------
   drip: { wave: 'triangle', f0: 1200, f1: 400, dur: 6, vol: 0.08, slide: true },
