@@ -41,7 +41,10 @@ const B = {
   /** Muzzle offset above his center. */
   shotMouthDy: 6,
   /** Jetpack exit (staged fights only). */
-  escapeFrames: 90,
+  escapeFrames: 90, // legacy floor; the real exit condition is escapeOffscreenY
+  /** He is "gone" once this far above the map top — outside any camera view
+   *  (the camera can only overscroll CAMERA.overscrollTop=48px above row 0). */
+  escapeOffscreenY: 120,
   escapeVx: 2.5,
   escapeVy: -2.2,
   /** Same generous contact rules as regular enemies. */
@@ -257,10 +260,14 @@ export class Bowsonaro implements BossLike {
     );
   }
 
-  // -- escape: jetpack up-right over 90f, then inert ------------------------
+  // -- escape: jetpack up-right until fully OFF-SCREEN, then inert ----------
+  // (A fixed 90-frame flight once parked him hovering in the top-right corner
+  // of the camera, visibly stuck — playtest report. He now keeps flying until
+  // he is well above any possible camera view; the painter culls him there.)
 
   private escapeTick(): Contact {
-    if (this.escapeT < B.escapeFrames) {
+    const gone = this.y < -B.escapeOffscreenY;
+    if (!gone) {
       this.escapeT++;
       this.vx = B.escapeVx;
       this.vy = B.escapeVy;

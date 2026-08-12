@@ -17,11 +17,11 @@ import {
   INK, LW, P, COIN, COIN_DARK,
   rect, flat, disc, ell, poly, seg, txt,
   coin, coffeeCup, sparkle, speechSpikes, rat, skeleton,
-  bigHand, drawEstrada, drawImpeach, drawBowsonaro, drawMangiani, drawPeach, drawToad,
+  bigArm, drawEstrada, drawImpeach, drawBowsonaro, drawMangiani, drawPeach, drawToad,
 } from './cast.ts';
 
 // Re-export the cast so existing consumers (titleArt) keep their import path.
-export { bigHand, drawEstrada, drawImpeach, drawBowsonaro, drawMangiani, drawPeach, drawToad } from './cast.ts';
+export { bigHand, bigArm, drawEstrada, drawImpeach, drawBowsonaro, drawMangiani, drawPeach, drawToad } from './cast.ts';
 export type {
   EstradaOpts, ImpeachOpts, BowsonaroOpts, MangianiOpts, PeachOpts, ToadOpts,
 } from './cast.ts';
@@ -1009,6 +1009,319 @@ const sceneStagedKidnap: SceneFn = (c, frame) => {
   vignette(c, 0.24);
 };
 
+// --- w1/w2/w3 world-end opener: THE GRAND ESCAPE -------------------------------
+// The biggest set-piece in the game. Night over the just-"raided" castle:
+// Bowsonaro rockets away on a jetpack with the princess under one arm, a
+// banner in tow and the kingdom's paperwork raining out of the contrail.
+const sceneGrandEscape: SceneFn = (c, frame) => {
+  // the whole getaway breathes on one gentle bob — everything strapped to the
+  // jetpack (glove, phone, banner rope, coin leak, shoe drop) shares it
+  const bob = Math.sin(frame * 0.06) * 3;
+  const gx = 310, gy = 225 + bob;               // Bowsonaro's feet anchor, mid-air
+
+  // BACK: deep night sky
+  vgrad(c, [[0, '#0a0d24'], [0.55, '#141a3a'], [1, '#2b2852']]);
+  const strng = createRng(919);
+  for (let i = 0; i < 46; i++) {                // hand-set stars, twinkling
+    const sx = strng() * VIEW_W, sy = strng() * 258, sr = 1 + strng() * 1.3;
+    const a = 0.2 + 0.55 * Math.abs(Math.sin(frame * 0.04 + i * 1.7));
+    c.fillStyle = `rgba(255,250,225,${a.toFixed(2)})`;
+    c.fillRect(sx, sy, sr, sr);
+  }
+  moon(c, 505, 68, 28);
+  for (const [cy0, sp, ph] of [[92, 0.06, 40], [56, 0.045, 300]] as const) { // thin night clouds drift
+    const cx = ((frame * sp + ph) % (VIEW_W + 160)) - 80;
+    c.fillStyle = 'rgba(14,11,36,0.65)';
+    c.beginPath(); c.ellipse(cx, cy0, 52, 7, 0, 0, Math.PI * 2); c.fill();
+    c.beginPath(); c.ellipse(cx + 38, cy0 + 4, 30, 5, 0, 0, Math.PI * 2); c.fill();
+  }
+  // DISTANT: the sleeping kingdom — hills, and a few windows still lit
+  poly(c, [[0, 302], [80, 286], [200, 300], [340, 284], [480, 298], [590, 288], [640, 296], [640, 360], [0, 360]], '#171331', 0);
+  flat(c, 0, 318, VIEW_W, 42, '#120e28');
+  c.fillStyle = 'rgba(255,224,130,0.75)';
+  for (const [wx, wy] of [[420, 306], [456, 312], [552, 302], [600, 310]] as const) c.fillRect(wx, wy, 3, 3);
+
+  // MID: the raided castle, small and already far below, bottom-left
+  const stone = '#241c40';
+  const tower = (tx: number, top: number, w: number): void => {
+    flat(c, tx - w / 2, top, w, 360 - top, stone);
+    seg(c, tx - w / 2, top, tx - w / 2, 360, INK, 2);
+    seg(c, tx + w / 2, top, tx + w / 2, 360, INK, 2);
+    seg(c, tx - w / 2, top, tx + w / 2, top, INK, 2);
+    for (let i = -1; i <= 1; i++) rect(c, tx + i * (w / 3) - 3.5, top - 7, 7, 7, stone, 2); // crenels ON the top
+    rect(c, tx - 7, top - 21, 14, 13, '#332a52', 2);   // searchlight housing ON the tower
+    disc(c, tx, top - 24, 5, '#ffe9a0', 2);            // the lens
+  };
+  tower(52, 168, 40);
+  tower(232, 156, 44);
+  flat(c, 0, 246, 262, 114, stone);                    // the keep wall between the towers
+  seg(c, 0, 246, 262, 246, INK, 2.5);
+  for (let x = 4; x < 258; x += 24) rect(c, x, 238, 13, 8, stone, 2);  // wall crenels
+  c.strokeStyle = 'rgba(10,8,26,0.5)'; c.lineWidth = 1.5;              // stone courses
+  for (let y = 264, r2 = 0; y < 356; y += 18, r2++) {
+    seg(c, 0, y, 262, y, 'rgba(10,8,26,0.5)', 1.5);
+    for (let x = 20 + (r2 % 2) * 22; x < 258; x += 44) seg(c, x, y, x, y + 18, 'rgba(10,8,26,0.35)', 1.5);
+  }
+  for (const [ax, ay0] of [[62, 266], [208, 272]] as const) {          // arrow slits, lights left on
+    rect(c, ax - 5, ay0 - 3, 10, 24, '#191233', 2);    // the stone rim
+    flat(c, ax - 2, ay0, 4, 18, '#ffd98a');            // the lit slit
+    flat(c, ax - 5, ay0 + 8, 10, 2.5, '#191233');      // its cross bar
+  }
+  // the door they blasted out of — left ajar, hall light through the gap
+  poly(c, [[134, 360], [134, 306], [155, 292], [176, 306], [176, 360]], '#0e0a1c', 2.5);
+  poly(c, [[156, 360], [156, 299], [176, 308], [176, 360]], '#ffd98a', 0);   // the lit gap
+  poly(c, [[134, 306], [134, 360], [116, 360], [125, 311]], '#3f2f1e', 2.5); // the leaf, swung out
+  disc(c, 130, 336, 2.5, COIN, 1.5);                   // knob on the open leaf
+
+  // two SEARCHLIGHT beams sweep from the tower lamps and cross in the sky
+  const beam = (ox: number, oy: number, ang: number): void => {
+    const dx = Math.cos(ang), dy = Math.sin(ang);
+    const px = -dy, py = dx;
+    const L = 560;
+    c.fillStyle = 'rgba(255,246,205,0.11)';
+    c.beginPath();
+    c.moveTo(ox - px * 4, oy - py * 4); c.lineTo(ox + px * 4, oy + py * 4);
+    c.lineTo(ox + dx * L + px * 40, oy + dy * L + py * 40);
+    c.lineTo(ox + dx * L - px * 40, oy + dy * L - py * 40);
+    c.closePath(); c.fill();
+    c.fillStyle = 'rgba(255,246,205,0.10)';
+    c.beginPath();
+    c.moveTo(ox - px * 2, oy - py * 2); c.lineTo(ox + px * 2, oy + py * 2);
+    c.lineTo(ox + dx * L + px * 15, oy + dy * L + py * 15);
+    c.lineTo(ox + dx * L - px * 15, oy + dy * L - py * 15);
+    c.closePath(); c.fill();
+    disc(c, ox, oy, 3, '#fff8d0', 0);                  // hot spot at the lens
+  };
+  beam(52, 144, -0.62 + Math.sin(frame * 0.011) * 0.22);
+  beam(232, 132, -1.35 + Math.sin(frame * 0.013 + 2.2) * 0.24);
+
+  // smoke columns drift off the battlements (the raid was very dramatic)
+  const smoke = (sx: number, sy: number, ss: number, ph: number): void => {
+    for (let k = 0; k < 5; k++) {
+      const t = (frame * 0.45 + k * 26 + ph * 40) % 130;
+      const yy = sy - t * ss;
+      const xx = sx + Math.sin(frame * 0.02 + k * 1.6 + ph) * 6 + t * 0.22;  // leans on the wind
+      const a = Math.max(0.02, 0.30 - t * 0.0021);
+      c.fillStyle = `rgba(185,185,212,${a.toFixed(2)})`;
+      c.beginPath(); c.ellipse(xx, yy, (6 + t * 0.16) * ss, (4 + t * 0.1) * ss, 0, 0, Math.PI * 2); c.fill();
+    }
+  };
+  smoke(96, 238, 1, 0);
+  smoke(186, 238, 0.85, 1.4);
+  smoke(20, 238, 0.7, 2.6);
+
+  // Mangiani, tiny on the battlement walkway, shaking a fist at the sky
+  c.save();
+  c.translate(112, 246);
+  c.rotate(Math.sin(frame * 0.18) * 0.05);             // the shake
+  drawMangiani(c, 0, 0, 0.42, { facing: 1, eyes: 'honest', brows: 'determined', mouth: 'open', pose: 'fist', backpack: true });
+  c.restore();
+  c.lineWidth = 2;                                     // anger spikes, moonlit (INK vanishes at night)
+  for (let i = 0; i < 3; i++) {
+    const a = -0.9 + i * 0.5 + Math.sin(frame * 0.2) * 0.06;
+    seg(c, 126 + Math.cos(a) * 10, 198 + Math.sin(a) * 10,
+      126 + Math.cos(a) * 17, 198 + Math.sin(a) * 17, 'rgba(255,255,255,0.65)', 2);
+  }
+  // Estrada BARELY visible behind the keep's corner, timing the next failure
+  drawEstrada(c, 286, 360, 0.5, { facing: -1, eyes: 'smug', mouth: 'grin', arms: 'down' });
+  seg(c, 291, 343, 296, 334, P.estradaRed, 3);         // forearm raised to eye level
+  disc(c, 297, 332, 2.6, P.glove, 1.5);
+  seg(c, 296, 331, 293, 340, COIN_DARK, 1.2);          // watch chain to the bib
+  disc(c, 299, 327, 4.2, COIN, 1.5);                   // the pocket watch, moonlit
+  seg(c, 299, 327, 299, 324.5, INK, 1);                // its hands: almost time
+  seg(c, 299, 327, 301.5, 327.5, INK, 1);
+  flat(c, 258, 240, 30, 120, stone);                   // the corner column hides most of him
+  seg(c, 288, 240, 288, 360, INK, 2);
+
+  // the contrail arc — the flight path OUT the door, swooping across frame
+  const qp = (t: number): readonly [number, number] => {
+    const u = 1 - t;
+    return [
+      u * u * 166 + 2 * u * t * 300 + t * t * 272,
+      u * u * 312 + 2 * u * t * 332 + t * t * (222 + bob),
+    ];
+  };
+  for (let i = 0; i < 26; i++) {                       // shimmering puffs
+    const t = i / 25;
+    const [px, py] = qp(t);
+    const a = (0.22 + 0.30 * t) * (0.7 + 0.3 * Math.sin(frame * 0.09 + t * 14));
+    c.fillStyle = `rgba(214,222,255,${Math.max(0.08, a).toFixed(2)})`;
+    c.beginPath(); c.ellipse(px, py, 5 + t * 9, 3.5 + t * 6, 0, 0, Math.PI * 2); c.fill();
+  }
+  // the wake: DECREE pages and certified bet slips raining off the contrail
+  const prng = createRng(477);
+  for (let i = 0; i < 9; i++) {
+    const t0 = 0.25 + prng() * 0.7;                    // where it fell off the trail
+    const [ax, ay2] = qp(t0);
+    const speed = 0.5 + prng() * 0.5;
+    const fall = (frame * speed + prng() * 200) % 150;
+    const px = ax + Math.sin(frame * 0.05 + i * 1.9) * 9 + fall * 0.1;
+    const py = ay2 + 8 + fall;
+    if (py > 352) continue;
+    c.save(); c.translate(px, py); c.rotate(Math.sin(frame * 0.07 + i * 2.1) * 0.6 + i);
+    rect(c, -8, -5.5, 16, 11, '#f4f0e6', 1.5);
+    if (i % 2 === 0) {
+      disc(c, 4, 2.5, 2, '#b9412f', 0);                // a royal DECREE, wax seal
+      seg(c, -5, -2, 5, -2, '#8a8494', 1);
+    } else {
+      seg(c, -5, -2, 5, -2, '#b9b2a4', 1);             // a bet slip
+      seg(c, -5, 1.5, 3, 1.5, '#b9b2a4', 1);
+    }
+    c.restore();
+  }
+  // wind streaks past the getaway
+  for (let i = 0; i < 4; i++) {
+    const t = (frame * 2.2 + i * 70) % 240;
+    const lx = 470 - t * 0.9 - i * 30, ly = 96 + i * 38 + t * 0.34;
+    seg(c, lx, ly, lx - 30, ly + 11, 'rgba(255,255,255,0.16)', 2);
+  }
+
+  // THE GETAWAY. Jetpack first (his back), then the princess, then the boss.
+  c.save();
+  c.translate(gx, gy);
+  c.rotate(-0.14);                                     // nose up, climbing right
+  rect(c, -50, -66, 26, 46, '#565d78', 2.5);           // the tank, strapped over the shell
+  c.beginPath(); c.arc(-37, -66, 13, Math.PI, 0); c.closePath();
+  c.fillStyle = '#565d78'; c.fill(); c.lineWidth = 2.5; c.strokeStyle = INK; c.stroke();
+  flat(c, -46, -62, 6, 40, 'rgba(255,255,255,0.16)');  // metal sheen
+  disc(c, -37, -48, 2, '#31294e', 1);                  // rivets
+  disc(c, -37, -32, 2, '#31294e', 1);
+  seg(c, -24, -56, -4, -50, '#3d3f52', 4);             // straps to the shell
+  seg(c, -24, -32, -6, -28, '#3d3f52', 4);
+  poly(c, [[-46, -20], [-28, -20], [-24, -10], [-50, -10]], '#3a3f52', 2.5); // nozzle
+  // the flame cone, roaring
+  const fl = 40 + Math.sin(frame * 0.4) * 7 + Math.sin(frame * 0.17) * 4;
+  poly(c, [[-48, -8], [-26, -8], [-31, 14 + fl * 0.4], [-37, 6 + fl]], '#ff8c3a', 2);
+  poly(c, [[-43, -8], [-31, -8], [-36, 2 + fl * 0.5]], '#ffd94d', 0);
+  ell(c, -37, -6, 5, 4, '#fff6d8', 0);                 // white-hot throat
+  c.strokeStyle = 'rgba(255,255,255,0.28)'; c.lineWidth = 1.5;
+  for (let i = 0; i < 2; i++) {                        // heat shimmer under the flame
+    c.beginPath();
+    for (let k = 0; k <= 4; k++) {
+      const yy = 6 + fl + k * 7;
+      const xx = -37 + (i - 0.5) * 8 + Math.sin(frame * 0.3 + k * 1.1 + i * 2) * 3;
+      if (k === 0) c.moveTo(xx, yy); else c.lineTo(xx, yy);
+    }
+    c.stroke();
+  }
+  // the money bag strapped to the tank — seam burst, leaking the winnings
+  ell(c, -56, -44, 9, 11, '#c9962a', 2);
+  poly(c, [[-60, -54], [-52, -54], [-56, -60]], '#c9962a', 2);
+  seg(c, -50, -50, -46, -48, '#5c4322', 3);            // its strap onto the tank
+  txt(c, '$', -56, -43, 9, INK, 'center', false);
+  seg(c, -61, -36, -52, -34, '#7c5a14', 2.5);          // the burst seam
+  // the rental tag they never removed (tied to a strap bolt)
+  seg(c, -37, -68, -33, -76, '#c8b088', 1.5);
+  c.save(); c.translate(-32, -80); c.rotate(0.22 + Math.sin(frame * 0.05) * 0.08);
+  rect(c, -12, -6, 24, 12, '#e8d5a0', 1.5);
+  txt(c, 'RENTAL', 0, 0, 6, '#6b4420', 'center', false);
+  c.restore();
+  c.restore();
+
+  // Princess Impeach, tucked under one arm like certified luggage — clear of
+  // his torso so BOTH caricatures stay readable in one glance
+  c.save();
+  c.translate(gx + 22, gy - 60);
+  c.rotate(1.2);                                       // near-horizontal, head lifted clear
+  drawImpeach(c, 0, 0, 0.72, { facing: 1, hands: 'hidden', mouth: 'smug', waveT: frame });
+  c.restore();
+  // gown hem flutter whipping back off the hem, short so it stays out of his face
+  c.lineWidth = 3;
+  for (let i = 0; i < 3; i++) {
+    const fy0 = gy - 54 + i * 4;
+    c.strokeStyle = i === 1 ? P.peachDeep : P.peachPale;
+    c.beginPath();
+    c.moveTo(gx + 24 - i * 2, fy0);
+    c.quadraticCurveTo(gx + 12, fy0 + 4 + Math.sin(frame * 0.13 + i * 2.1) * 4,
+      gx + 2, fy0 + 2 + Math.sin(frame * 0.13 + i * 2.1 + 1.2) * 6);
+    c.stroke();
+  }
+
+  // Bowsonaro, mid-air, grinning into the wind
+  c.save();
+  c.translate(gx, gy);
+  c.rotate(-0.14);
+  drawBowsonaro(c, 0, 0, 1.15, { facing: 1, pose: 'carry', mouth: 'grin' });
+  seg(c, -2, -76, 8, -85, P.turtSkin, 5);              // spare forearm up to the beret
+  disc(c, 9, -86, 4.5, P.turtSkin, 2);                 // the claw holding it down
+  for (let i = -1; i <= 1; i++) {
+    poly(c, [[9 + i * 3 - 1.1, -83.5], [9 + i * 3 + 1.1, -83.5], [9 + i * 3, -80]], '#e8e4d4', 1);
+  }
+  sparkle(c, 15, -76, 4.5, frame, 0.6);                // moon glint on the aviators
+  c.restore();
+  // his claw clamps the gown — visibly holding, never floating
+  disc(c, gx + 30, gy - 60, 5.5, P.turtSkin, 2);
+  for (let i = -1; i <= 1; i++) {
+    poly(c, [[gx + 30 + i * 3.4 - 1.2, gy - 57], [gx + 30 + i * 3.4 + 1.2, gy - 57], [gx + 30 + i * 3.4, gy - 52.5]], '#e8e4d4', 1.5);
+  }
+
+  // THE royal goodbye: her one oversized glove (rig hands hidden), waving —
+  // full chain from her shoulder, per the attachment rule
+  const wA = Math.sin(frame * 0.11);
+  const wgx = gx + 116, wgy = gy - 94 + wA * 5;
+  // the far shoulder sits just past her lifted head — the sleeve leaves it
+  // without ever crossing the face
+  bigArm(c, gx + 93, gy - 70, wgx, wgy, 15, 0.35 + wA * 0.38, P.peachPink, 6);
+  c.strokeStyle = 'rgba(255,255,255,0.35)'; c.lineWidth = 2;    // wave whooshes
+  c.beginPath(); c.arc(wgx, wgy, 26, -1.2 + wA * 0.3, -0.3 + wA * 0.3); c.stroke();
+  c.beginPath(); c.arc(wgx, wgy, 33, -1.0 + wA * 0.3, -0.45 + wA * 0.3); c.stroke();
+  // and the phone in the NORMAL hand (the contrast IS the joke)
+  const phx = gx + 52, phy = gy - 28;
+  poly(c, [[gx + 44, gy - 50], [phx - 2, phy - 6], [phx + 4, phy - 8], [gx + 50, gy - 52]], P.peachPink, 2); // dainty arm
+  disc(c, phx, phy - 2, 4, P.glove, 2);
+  c.save(); c.translate(phx + 3, phy + 6); c.rotate(0.3);
+  rect(c, -5, -9, 10, 18, '#20222c', 2);
+  flat(c, -3.5, -7, 7, 13, '#8fd8ff');
+  c.restore();
+  sparkle(c, phx + 12, phy - 2, 3, frame, 2.6);        // a notification, mid-flight
+
+  // the towed banner — rope VISIBLY knotted to the jetpack dome
+  const rx0 = gx - 48, ry0 = gy - 73;
+  const flap = Math.sin(frame * 0.07);
+  const bnx = 192, bny = 116 + flap * 4;               // the banner's rope-end edge
+  c.strokeStyle = '#c8b088'; c.lineWidth = 2;
+  c.beginPath(); c.moveTo(rx0, ry0);
+  c.quadraticCurveTo((rx0 + bnx) / 2, (ry0 + bny) / 2 + 16 + flap * 3, bnx, bny);
+  c.stroke();
+  disc(c, rx0, ry0, 2.5, '#c8b088', 1);                // the knot
+  const rip = (k: number): number => Math.sin(frame * 0.09 + k) * 4;
+  poly(c, [                                            // cloth, torn at the trailing edge
+    [bnx, bny - 22 + rip(0)], [bnx, bny + 14 + rip(0.6)],
+    [66, bny + 22 + rip(1.8)], [76, bny + 10 + rip(2.2)], [58, bny + 2 + rip(2.6)],
+    [72, bny - 8 + rip(3.0)], [60, bny - 18 + rip(3.4)],
+  ], '#f0e8d0', 2.5);
+  c.save();                                            // the message, in wobbly paint
+  c.translate((bnx + 64) / 2, bny - 2 + rip(1));
+  c.rotate(-0.03 + flap * 0.025);
+  txt(c, 'NOT A', 0, -8, 11, '#b9412f', 'center', false);
+  txt(c, 'KIDNAPPING', 0, 6, 11, '#b9412f', 'center', false);
+  seg(c, 24, 11, 25, 18, '#b9412f', 2);                // a paint drip off the G
+  c.restore();
+
+  // coins leaking from the burst bag, trickling down toward the kingdom
+  for (let i = 0; i < 6; i++) {
+    const t = (frame * 1.1 + i * 21) % 120;
+    coin(c, gx - 55 - t * 0.18 + Math.sin(frame * 0.08 + i) * 2.5, gy - 34 + t, 4.5);
+  }
+  sparkle(c, gx - 48, gy - 26, 3.5, frame, 1.2);
+  // the dropped high-heel, mid-fall FROM the princess (motion lines above it)
+  const shT = (frame % 170) / 170;
+  const shX = gx + 30 - shT * 14, shY3 = gy - 8 + shT * 114;
+  seg(c, shX + 3, shY3 - 26, shX + 5, shY3 - 12, 'rgba(255,255,255,0.4)', 2);
+  seg(c, shX - 5, shY3 - 20, shX - 4, shY3 - 8, 'rgba(255,255,255,0.3)', 2);
+  c.save(); c.translate(shX, shY3); c.rotate(0.6 + shT * 2.4);
+  poly(c, [[-7, -3], [5, -5], [7, -1], [2, 0], [6, 8], [2, 9], [-2, 1], [-7, 0]], P.peachDeep, 2); // sole + stiletto
+  c.restore();
+
+  // FOREGROUND: the parapet we watch from, lower right; a torn drape corner
+  flat(c, 372, 322, 268, 38, '#151027');
+  for (let x = 380; x < VIEW_W; x += 46) flat(c, x, 306, 26, 16, '#151027');
+  seg(c, 372, 322, VIEW_W, 322, 'rgba(160,150,215,0.25)', 2);   // moonlit stone edge
+  poly(c, [[640, 0], [520, 0], [560, 10], [548, 30], [572, 34], [560, 58], [590, 56], [582, 80], [612, 74], [640, 90]], '#6e1c2c', 3);
+  seg(c, 596, 78, 600, 96 + Math.sin(frame * 0.06) * 3, '#6e1c2c', 2); // a loose thread sways
+  vignette(c, 0.34);
+};
+
 // --- intro 6: the balcony speech ---------------------------------------------
 const sceneHeroSpeech: SceneFn = (c, frame) => {
   vgrad(c, [[0, '#f2a65e'], [0.6, '#e88a52'], [1, '#d86a4a']]);
@@ -1450,16 +1763,13 @@ const sceneBigHands: SceneFn = (c, frame) => {
   seg(c, 430, ay + 18, 424 + lsw, ay + 74, '#c8b088', 2);
   seg(c, 446, ay + 18, 440 + lsw, ay + 74, '#c8b088', 2);
   for (let i = 1; i < 4; i++) seg(c, 428 + lsw * (i / 4), ay + 18 + i * 14, 444 + lsw * (i / 4), ay + 18 + i * 14, '#c8b088', 2.5);
-  // Impeach ON deck behind the railing — hands hidden: the FOREGROUND hand
-  // below is her one oversized hand this panel (never both).
-  drawImpeach(c, 470, ay - 20, 0.8, { facing: -1, hands: 'hidden', mouth: 'open', waveT: frame });
+  // Impeach AT the railing, leaning over — hands hidden: the colossal hand
+  // below is her one oversized hand this panel (never both), and it is drawn
+  // as a FULL ARM CHAIN from her shoulder, over the railing, off the hull.
+  drawImpeach(c, 444, ay - 20, 0.8, { facing: -1, hands: 'hidden', mouth: 'open', waveT: frame });
   for (let i = 0; i < 6; i++) seg(c, 396 + i * 40, ay - 24, 396 + i * 40, ay - 44, '#4a2f14', 3); // railing posts
   seg(c, 390, ay - 44, 600, ay - 44, '#4a2f14', 3);
   txt(c, 'HELLO LITTLE PEOPLE', 470, ay - 106, 13, '#fff');
-  // THE HAND — half the sky. One pink sleeve anchors it back to the ship.
-  const wob = Math.sin(frame * 0.08);
-  poly(c, [[402, ay - 6], [396, ay + 26], [306, 240 + wob * 8], [268, 200 + wob * 8]], P.peachPink, 3);
-  bigHand(c, 240, 178 + wob * 9, 88, -0.25 + wob * 0.07);
   // GROUND: meadow band + the chain-link fence they kidnap over
   flat(c, 0, 320, VIEW_W, VIEW_H - 320, '#8cba62');
   seg(c, 0, 320, VIEW_W, 320, INK, LW);
@@ -1473,11 +1783,16 @@ const sceneBigHands: SceneFn = (c, frame) => {
     }
   }
   seg(c, 0, 286, VIEW_W, 286, '#8a8494', 2.5);
+  // THE HAND — it owns the lower-left third, but it is unmistakably HERS:
+  // shoulder -> sleeve crossing the railing and the hull edge -> cuff -> glove
+  // (drawn after the fence so nothing etches over the white).
+  const wob = Math.sin(frame * 0.08);
+  bigArm(c, 434, ay - 70, 300, 248 + wob * 8, 54, -0.22 + wob * 0.07, P.peachPink, 8);
   // witnesses: Mangiani measuring, two toads doing the arithmetic too
   drawMangiani(c, 110, 356, 1.15, { facing: 1, eyes: 'narrow', brows: 'worried', mouth: 'grim', pose: 'measure', backpack: true });
-  seg(c, 148, 268, 216, 244, COIN, 3);                       // the tape, stretched toward the hand
+  seg(c, 148, 266, 252, 286, COIN, 3);                       // the tape, stretched to the glove's edge
   rect(c, 132, 262, 16, 12, '#3d3f52', 2);                   // tape case in his hand
-  txt(c, 'hand: 4.5 m ??', 150, 224, 11, INK, 'left', false);
+  txt(c, 'hand: 40 cm ?!', 150, 224, 11, INK, 'left', false); // the canon figure — FORTY
   drawToad(c, 548, 352, 0.95, { facing: -1, mood: 'shock', spot: '#3f8fd0' });
   drawToad(c, 596, 356, 0.85, { facing: -1, mood: 'despair', spot: '#e08a2e' });
   // FOREGROUND: a wisp of cloud slides under the hand for depth
@@ -1919,6 +2234,7 @@ const SCENES: Record<CutsceneArtId, SceneFn> = {
   'dungeon': sceneDungeon,
   'wardrobe': sceneWardrobe,
   'staged-kidnap': sceneStagedKidnap,
+  'grand-escape': sceneGrandEscape,
   'hero-speech': sceneHeroSpeech,
   'mangiani-joins': sceneMangianiJoins,
   'too-late': sceneTooLate,

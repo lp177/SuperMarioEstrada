@@ -38,6 +38,7 @@ export type CutsceneArtId =
   | 'dungeon'         // the real Peach in the rat/skeleton dungeon
   | 'wardrobe'        // Trump putting on the dress/wig; shell on a stand
   | 'staged-kidnap'   // Bowsonaro theatrically carrying Impeach away
+  | 'grand-escape'    // the post-boss set piece: jetpack getaway with Impeach
   | 'hero-speech'     // Estrada's balcony speech to terrified Toads
   | 'mangiani-joins'  // Mangiani with a tiny backpack, determined
   | 'too-late'        // castle door, "she is in another castle", WARM COFFEE

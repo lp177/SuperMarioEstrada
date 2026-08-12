@@ -104,7 +104,11 @@ describe('co-op: two bodies', () => {
     // P1 idles at the start; P2 sprints right through both pickups. At each
     // pickup moment P1 must still be far away — the collector was P2.
     const evs: GameEvent[] = [];
-    for (let i = 0; i < 240; i++) {
+    // 150 frames: enough for P2 to sprint through both pickups (tiles 20/25)
+    // at the current PHYS, but NOT enough to reach the flagpole — the grab
+    // bonus would pollute the coin ledger this test pins (bit us once when a
+    // speed retune stretched P2's reach into the ceremony).
+    for (let i = 0; i < 150; i++) {
       const step = level.update(inp(), inp({ right: true, run: true }));
       if (step.includes('coin') || step.includes('goldbar')) {
         expect(level.players[0]!.x).toBeLessThan(15 * TILE); // P1 nowhere near

@@ -23,16 +23,16 @@ export const PHYS = {
   // "really slow for walking... not the expected feeling of a mario like").
   // Caps must stay well under TILE=16/frame (collision probes one tile).
   /** Ground acceleration per frame while below the applicable max. */
-  acc: 0.14,
+  acc: 0.17,
   /** Extra acceleration multiplier while `run` held. */
   runBoost: 1.6,
-  walkMax: 2.1,
-  runMax: 3.8,
+  walkMax: 2.4,
+  runMax: 4.4,
   /** Deceleration when skidding (holding the opposite direction). */
-  skid: 0.36,
+  skid: 0.42,
   /** Ground friction with no input. */
-  frc: 0.1,
-  airAcc: 0.13,
+  frc: 0.12,
+  airAcc: 0.16,
   /** Gravity while rising with jump held (variable jump height). */
   gravHold: 0.17,
   /** Gravity otherwise. */

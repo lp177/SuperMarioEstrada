@@ -27,6 +27,21 @@ import {
 // "LOOSEST SLOTS IN THE KINGDOM" signage) is the painter's job; this file
 // owns geometry, spawns and Estrada's excuses.
 //
+// 2026-08 richness rebuild (rules 11-14 — the playtest indictment "no relief,
+// no alternative path, always same enemies"): the ARCHITECTURE now gambles.
+//   - RELIEF: the strip rolls — escalator steppes lift every act to an upper
+//     gaming floor around row 18 and drop it back to the street at 26; the
+//     card pits sink the lane to 29. Every act spans >= 8 rows and steps
+//     >= 6 times.
+//   - ALT ROUTES: catwalk() mezzanines — oneway scaffolds 5-6 rows over the
+//     lane with coins riding the rail — run over the long flats, and the
+//     warp vault counting rooms count as parallel routes; every act holds
+//     >= 18% dual columns with a >= 12-column contiguous parallel stretch.
+//   - ENEMIES: w3a4's poker floor hires the card-counting rat (3rd kind).
+//   - THE POLE: closeOut now stacks a two-sided CHIP-STACK PYRAMID whose
+//     peak (4 rows over the goal line, inside the 8-tile pole window) puts
+//     the certified >= 90% grab in a plain run-jump; pole->door stays flat.
+//
 // Authoring invariants kept here (the act contract enforces most of them):
 //   - every act chains motifs on {endX, endRow}; raw builder calls only where
 //     no motif says "casino" (slot banks, card tables, vault cells, shelves),
@@ -37,10 +52,12 @@ import {
 //     cannot wander back to the spawn in time,
 //   - the mandatory route is flow-bot fare: steps <= 2, gaps <= 5, walls only
 //     where an 8-tile bot jump (or a spring, for humans) clears them,
-//   - warp features (2026-08 re-tune) are OPTIONAL side content — the flow
-//     bot never presses down, so the mandatory route ignores them: w3a1 the
-//     High-Roller Lounge (10-coin vault), w3a6 the deep vault (16 coins +
-//     goldbar 3), w3a7 an honest shortcut past the entourage gauntlet.
+//   - catwalks overlay SOLID lane stretches only — over a gap the lane scan
+//     would adopt the scaffold as the mandatory lane,
+//   - warp features are OPTIONAL side content — the flow bot never presses
+//     down, so the mandatory route ignores them: w3a1 the High-Roller Lounge
+//     (10-coin vault), w3a6 the deep vault (16 coins + goldbar 3), w3a7 an
+//     honest shortcut past the entourage gauntlet.
 // ============================================================================
 
 // ---------------------------------------------------------------------------
@@ -49,7 +66,8 @@ import {
 // ---------------------------------------------------------------------------
 
 /** A bank of three qblock "slot reels" 4 rows over flat ground — bump the
- *  machine, see what pays out. Mixed contents is the whole joke. */
+ *  machine, see what pays out. Mixed contents is the whole joke. The reel
+ *  tops double as a standable upper shelf (rule 12 counts them). */
 function slotBank(
   b: LevelBuilderLike,
   x: number,
@@ -61,6 +79,24 @@ function slotBank(
   b.qblock(x + 3, row - 4, reels[1]);
   b.qblock(x + 4, row - 4, reels[2]);
   return { endX: x + 7, endRow: row };
+}
+
+/** CARD-MEZZANINE CATWALK — the alternate route made casino: a felt-top
+ *  oneway scaffold bolted `lift` rows over an EXISTING stretch of lane
+ *  (pure overlay: lays no ground, advances no endX), coins riding the rail.
+ *  Rule 12 counts every covered column twice — walk the tables below or the
+ *  scaffold above. lift 5 is the house default; lift 6 clears stretches that
+ *  already hang coins at row-5 (drone escort rows). Overlay SOLID runs only:
+ *  over a gap the lane scan would adopt the scaffold as the mandatory lane. */
+function catwalk(
+  b: LevelBuilderLike,
+  x0: number,
+  x1: number,
+  row: number,
+  lift: 5 | 6 = 5,
+): void {
+  b.oneway(x0, x1, row - lift);
+  b.coinRow(x0 + 1, x1 - 1, row - lift - 1);
 }
 
 /** A brick-lidded vault cell holding a goldbar — secretPocket geometry (the
@@ -82,7 +118,9 @@ function vaultCell(b: LevelBuilderLike, x: number, row: number, bar: number): Mo
  *  the exact shape the flow bot already clears in pipeField, so the
  *  mandatory route never needs the warp. Room geometry keeps contract rule 7
  *  honest by construction: 2 clear rows over every mouth, and the hop from
- *  the room floor onto the departure mouth is a 2-row step. */
+ *  the room floor onto the departure mouth is a 2-row step. The room floor
+ *  also rides 9 rows under the lane, so its 12 columns are rule 12's
+ *  favorite parallel stretch. */
 function warpVault(
   b: LevelBuilderLike,
   x: number,
@@ -191,20 +229,35 @@ function highShelf(b: LevelBuilderLike, x: number, row: number, bar: number): Mo
   return { endX: x + 6, endRow: row };
 }
 
-/** Standard act ending: pad runway, goal exactly 7 tiles before def.width,
- *  ground running to the right edge (the ceremony jog never finds a pit). */
+/** Standard act ending (2026-08 richness wave): pad runway, then the
+ *  CHIP-STACK PYRAMID — the house counts its winnings in public. Two-sided
+ *  2-row treads to a 2-wide peak 4 rows over the goal line, peak parked at
+ *  width-21..width-20, inside rule 14's 8-tile window left of the pole
+ *  (width-15): a plain run-jump off the peak grabs ~91% — certified. The
+ *  two-sided descent keeps it out of rule 8's recess scan (a sheer-backed
+ *  stack would be a trap), and the pole-to-door runway itself stays flat
+ *  (ceremony walk contract): goal exactly 7 tiles before def.width, ground
+ *  running to the right edge so the ceremony jog never finds a pit. */
 function closeOut(b: LevelBuilderLike, c: MotifEnd): void {
-  const pad = b.widthTiles - 14 - c.endX;
+  const pyrX = b.widthTiles - 23;
+  const pad = pyrX - c.endX;
   if (pad < 2) {
     throw new Error(`closeOut: chain ran long — endX ${c.endX} leaves pad ${pad} (< 2)`);
   }
   c = runway(b, c.endX, c.endRow, { len: pad, rings: true });
-  c = finishRunway(b, c.endX, c.endRow, { len: 10 }); // goal at width-7
+  const row = c.endRow;
+  b.ground(pyrX, pyrX + 1, row - 2);
+  b.ground(pyrX + 2, pyrX + 3, row - 4); // the peak: the certified launch
+  b.ground(pyrX + 4, pyrX + 5, row - 2);
+  b.coin(pyrX + 2, row - 6); // two chips crown the stack
+  b.coin(pyrX + 3, row - 6);
+  c = finishRunway(b, pyrX + 6, row, { len: 13 }); // goal at width-7
   runway(b, c.endX, c.endRow, { len: 4 }); // prop ground to the edge
 }
 
 /** Castle ending: pad runway into a 26-tile arena whose far wall is 3 tiles
- *  short of width (goal lands at width-7), then ground to the edge. */
+ *  short of width (goal lands at width-7), then ground to the edge. Castle
+ *  acts have no pole — the door is the whole ceremony — so no pyramid. */
 function closeArena(b: LevelBuilderLike, c: MotifEnd): void {
   const x = b.widthTiles - 34; // approach 6 + arena 26 + 2 edge tiles
   const pad = x - c.endX;
@@ -222,11 +275,12 @@ function closeArena(b: LevelBuilderLike, c: MotifEnd): void {
 
 export const world3: LevelDef[] = [
   // -------------------------------------------------------------------------
-  // w3a1 — the marquee entrance: valet runway, first slot bank, chip goons,
-  // and the world's first warp: the comped High-Roller Lounge, a 10-coin
-  // counting room under the strip (teaches press-down-on-pipes early).
-  // Easy: gaps 3-4, everything on one gentle lane at row 26.
-  // Coins: 16 + 5 + 3 + 6 + 9 + 10 vault + 3 rings = 52 entities + 8 qblock.
+  // w3a1 — the marquee entrance: valet runway under a mezzanine catwalk,
+  // first slot bank, chip goons, then the ESCALATOR STEPPES up to the marquee
+  // roof (row 18) and back down to the strip — plus the world's first warp:
+  // the comped High-Roller Lounge, a 10-coin counting room under the strip
+  // (teaches press-down-on-pipes early). Easy: gaps 3-4, steps of 2.
+  // Coins: strip rows + 3 catwalk rails + arcs + 10 vault + chip crown.
   // -------------------------------------------------------------------------
   {
     id: 'w3a1',
@@ -235,24 +289,33 @@ export const world3: LevelDef[] = [
     title: 'The Welcome Strip',
     excuse: 'No princess at check-in — but the desk comped me the Notary Suite, so I certified the minibar instead.',
     theme: 'casino',
-    width: 196,
+    width: 224,
     build(b) {
       let c = runway(b, 0, 26, { len: 12, coinRow: 22, rings: true }); // 16 coins
       b.start(2, 25);
+      catwalk(b, 1, 10, 26); // valet mezzanine over the opening strip
       c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // 2 coin qb
       c = slotBank(b, c.endX, c.endRow, ['coin', 'coin', 'coin']); // 3 coin qb
       const g1 = c.endX; // pit-boss nephews on the strip (>= 30 tiles out)
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'chipstack'] });
       b.coinRow(g1 + 1, g1 + 9, c.endRow - 3); // 9 coins
+      catwalk(b, g1, c.endX - 1, c.endRow); // scaffold over the goon line
       c = coinArc(b, c.endX, c.endRow, { gap: 3 }); // 5 coins
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
       c = gapJump(b, c.endX, c.endRow, { gap: 3 });
+      c = steppes(b, c.endX, c.endRow, { count: 4, stepH: 2, treadW: 2, dir: 1 }); // up to 18
+      const roofX = c.endX; // the marquee roof
+      c = runway(b, c.endX, c.endRow, { len: 8, rings: true }); // 3 coins
+      catwalk(b, roofX, c.endX - 1, c.endRow); // neon rig over the roof
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      c = steppes(b, c.endX, c.endRow, { count: 4, stepH: 2, treadW: 2, dir: -1 }); // down to 26
       c = warpVault(b, c.endX, c.endRow, { coins: 10 }); // the comped High-Roller Lounge
-      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // waitress plant, 91 tiles out
+      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // waitress plant
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      const g2 = c.endX;
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'lobbyist'] });
+      catwalk(b, g2, c.endX - 1, c.endRow); // second mezzanine
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
       c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
       c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
@@ -261,14 +324,15 @@ export const world3: LevelDef[] = [
       c = goldbarPerch(b, c.endX, c.endRow, { index: 3 });
       c = secretPocket(b, c.endX, c.endRow, { index: 2 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
-      closeOut(b, c); // pad 8: 3 ring coins
+      closeOut(b, c);
     },
   },
 
   // -------------------------------------------------------------------------
   // w3a2 — the slot hall: qblock-heavy, five banks of mixed reels plus two
-  // brick galleries. The world's first (rare) Immunity badge hides in a reel.
-  // Coins: 16 + 9 + 6 + 3 + 3 rings = 37 entities + 16 qblock = 53.
+  // brick galleries, and the ESCALATOR up to the high-limit floor (row 18)
+  // where the goldpen reel pays out. The world's first (rare) Immunity badge
+  // hides in a reel on the way back down. Catwalks over both goon lines.
   // -------------------------------------------------------------------------
   {
     id: 'w3a2',
@@ -277,42 +341,53 @@ export const world3: LevelDef[] = [
     title: 'Slot Canyon',
     excuse: 'The rescue came up three lemons. House rules: a lemon rescue is void. I stamped the void myself.',
     theme: 'casino',
-    width: 210,
+    width: 228,
     build(b) {
-      let c = runway(b, 0, 26, { len: 12, coinRow: 22, rings: true }); // 16 coins
+      let c = runway(b, 0, 26, { len: 10, coinRow: 22, rings: true }); // 11 coins
       b.start(2, 25);
+      catwalk(b, 1, 8, 26); // rail over the entrance hall
       c = slotBank(b, c.endX, c.endRow, ['coin', 'coin', 'coin']); // 3 coin qb
-      c = brickGallery(b, c.endX, c.endRow, { len: 12, powerup: 'stamp' }); // 3 coin qb
+      c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // 2 coin qb
       const g1 = c.endX;
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] });
       b.coinRow(g1 + 1, g1 + 9, c.endRow - 3); // 9 coins
+      catwalk(b, g1, c.endX - 1, c.endRow); // scaffold over the volunteers
       c = gapJump(b, c.endX, c.endRow, { gap: 3 });
       c = slotBank(b, c.endX, c.endRow, ['coin', 'coin', 'coin']); // 3 coin qb
       c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
-      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true }); // subpoena service
+      c = steppes(b, c.endX, c.endRow, { count: 4, stepH: 2, treadW: 2, dir: 1 }); // up to 18
+      const hlX = c.endX; // the high-limit floor
+      c = runway(b, c.endX, c.endRow, { len: 8, rings: true }); // 3 coins
+      catwalk(b, hlX, c.endX - 1, c.endRow);
       c = slotBank(b, c.endX, c.endRow, ['coin', 'goldpen', 'coin']); // 2 coin qb
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'pollster', 'lobbyist'] });
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
-      c = gapJump(b, c.endX, c.endRow, { gap: 4 });
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 3, dir: -1 }); // down to 22
+      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true }); // subpoena service
       c = slotBank(b, c.endX, c.endRow, ['coin', 'immunity', 'coin']); // the RARE badge
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
+      const g2 = c.endX;
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'pollster', 'lobbyist'] });
+      catwalk(b, g2, c.endX - 1, c.endRow); // the long parallel scaffold
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: -1 }); // down to 26
       c = crumbleBridge(b, c.endX, c.endRow, { len: 4 });
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 });
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
       c = slotBank(b, c.endX, c.endRow, ['coin', 'coin', 'coin']); // 3 coin qb
       c = secretPocket(b, c.endX, c.endRow, { index: 2 });
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
-      closeOut(b, c); // pad 7: 3 ring coins
+      closeOut(b, c);
     },
   },
 
   // -------------------------------------------------------------------------
   // w3a3 — the high road: neon rooftops. Two spring-powered wall bounces lift
-  // the lane to the very top of the band; paparazzi patrol the skyline.
-  // Coins: 11 + 3 + 3 + 9 + 6 + 3 + 3 + 7 + 3 rings = 48 entities.
+  // the lane to the very top of the band; paparazzi patrol the skyline. The
+  // act finally earns its name: a 14-column NEON ROOFTOP CATWALK rides over
+  // the long marquee (the parallel line rule 12 wants), with more scaffolds
+  // over the checkpoint terrace and the second drone escort.
   // -------------------------------------------------------------------------
   {
     id: 'w3a3',
@@ -321,28 +396,39 @@ export const world3: LevelDef[] = [
     title: 'High Roller Rooftops',
     excuse: 'I had her on the rooftop, but the paparazzi ruled my cape fake news. A hero cannot rescue under libel.',
     theme: 'casino',
-    width: 200,
+    width: 210,
     build(b) {
       let c = runway(b, 0, 26, { len: 10, coinRow: 22, rings: true }); // 11 coins
       b.start(2, 25);
+      catwalk(b, 1, 8, 26); // awning over the street entrance
       c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 3, dir: 1 }); // up to 20
+      const t1 = c.endX;
       c = runway(b, c.endX, c.endRow, { len: 6, rings: true }); // 3 coins
+      catwalk(b, t1, c.endX - 1, c.endRow);
       c = springboardWall(b, c.endX, c.endRow, { wallH: 5 }); // bounce to 15
-      c = runway(b, c.endX, c.endRow, { len: 8, rings: true }); // 3 coins
+      const roofX = c.endX; // THE rooftop line
+      c = runway(b, c.endX, c.endRow, { len: 14, rings: true }); // 6 coins
+      catwalk(b, roofX, c.endX - 1, c.endRow); // 14 columns of neon scaffold
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
       c = gapJump(b, c.endX, c.endRow, { gap: 4 });
-      const g1 = c.endX; // skyline surveillance, 54+ tiles out
+      const g1 = c.endX; // skyline surveillance, far out
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['paparazzo', 'chipstack'] });
       b.coinRow(g1 + 1, g1 + 9, c.endRow - 5); // 9 coins, above the drone lane
       c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
       c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: -1 }); // down to 19
+      const rest = c.endX;
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      catwalk(b, rest, c.endX - 1, c.endRow); // shade over the breather
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = springboardWall(b, c.endX, c.endRow, { wallH: 5 }); // bounce to 14 (lane top)
+      const t2 = c.endX;
       c = runway(b, c.endX, c.endRow, { len: 6, rings: true }); // 3 coins
+      catwalk(b, t2, c.endX - 1, c.endRow);
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
       c = gapJump(b, c.endX, c.endRow, { gap: 5 });
+      const g2 = c.endX;
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['paparazzo', 'lobbyist'] });
+      catwalk(b, g2, c.endX - 1, c.endRow); // scaffold over the second escort
       c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
       c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // down to 20
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
@@ -350,16 +436,17 @@ export const world3: LevelDef[] = [
       c = goldbarPerch(b, c.endX, c.endRow, { index: 3 });
       c = secretPocket(b, c.endX, c.endRow, { index: 2 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
-      closeOut(b, c); // pad 8: 3 ring coins
+      closeOut(b, c);
     },
   },
 
   // -------------------------------------------------------------------------
   // w3a4 — OPTIONAL low road: the poker floor. Card-table oneways over
   // spike-carpeted CARD SHREDDER pits (rule 8: falling between tables must
-  // carry risk), back-to-back chipstack gauntlets. Two goldbars sit in the
-  // open (perches); three hide (two vault cells, one spring-only high shelf).
-  // Coins: 11 + 9 + 3 + 9 + 6 + 6 rings = 44 entities + 1 qblock = 45.
+  // carry risk), chipstack gauntlets — and the CARD-COUNTING RAT working the
+  // pit (rule 13's third kind). After the second shredder the service stairs
+  // climb to the counting loft at row 18. Two goldbars sit in the open
+  // (perches); three hide (two vault cells, one spring-only high shelf).
   // -------------------------------------------------------------------------
   {
     id: 'w3a4',
@@ -368,36 +455,47 @@ export const world3: LevelDef[] = [
     title: 'Card Table Flats',
     excuse: 'I held a pair of princesses; the dealer showed a royal flush. I folded the rescue, face down, for tax reasons.',
     theme: 'casino',
-    width: 190,
+    width: 206,
     build(b) {
       let c = runway(b, 0, 26, { len: 10, coinRow: 22, rings: true }); // 11 coins
       b.start(2, 25);
+      catwalk(b, 1, 8, 26); // dealer's rail over the entrance
       c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'stamp' }); // 1 coin qb
+      const g1 = c.endX;
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'chipstack'] });
+      catwalk(b, g1, c.endX - 1, c.endRow); // scaffold over the chip goons
       c = cardTables(b, c.endX, c.endRow); // 9 coins over the felt
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 }); // easy bar 1
       c = gapJump(b, c.endX, c.endRow, { gap: 4 });
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'pollster', 'chipstack'] });
+      const g2 = c.endX; // the pit crew: counter, volunteer, stack
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'pollster', 'chipstack'] });
+      catwalk(b, g2, c.endX - 1, c.endRow); // the long mezzanine over the pit
       c = vaultCell(b, c.endX, c.endRow, 1); // hidden bar 1
       c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
       c = cardTables(b, c.endX, c.endRow); // 9 coins over the felt
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
       c = springboardWall(b, c.endX, c.endRow, { wallH: 4 }); // up to 22
       c = highShelf(b, c.endX, c.endRow, 2); // hidden bar 2 — spring only
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: 1 }); // up to 18
+      const loft = c.endX; // the counting loft
+      c = runway(b, c.endX, c.endRow, { len: 6, rings: true }); // 3 coins
+      catwalk(b, loft, c.endX - 1, c.endRow);
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: -1 }); // down to 22
       c = gapJump(b, c.endX, c.endRow, { gap: 5 });
       c = vaultCell(b, c.endX, c.endRow, 3); // hidden bar 3
       c = secretPocket(b, c.endX, c.endRow, { index: 2 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // easy bar 2
-      closeOut(b, c); // pad 13: 6 ring coins
+      closeOut(b, c);
     },
   },
 
   // -------------------------------------------------------------------------
   // w3a5 — the chip mountain: two steppes climbs to the summit ridge (lane
   // top), a crumbling ridge walk, a giant slot-lever gavel on the way down.
-  // Coins: 11 + 9 + 3 + 9 + 3 + 6 + 6 = 47 entities + 2 qblock = 49.
+  // The summit runway now carries a 13-column skyline catwalk (the parallel
+  // ridge), with more rails over the base camp and the breather.
   // -------------------------------------------------------------------------
   {
     id: 'w3a5',
@@ -406,32 +504,38 @@ export const world3: LevelDef[] = [
     title: 'Chip Mountain',
     excuse: 'The ransom cage takes chips only and demanded two forms of ID. Mine are notarized. Hers were kidnapped with her.',
     theme: 'casino',
-    width: 210,
+    width: 222,
     build(b) {
       let c = runway(b, 0, 26, { len: 10, coinRow: 22, rings: true }); // 11 coins
       b.start(2, 25);
+      catwalk(b, 1, 8, 26); // base-camp rigging
       c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // 2 coin qb
       const g1 = c.endX;
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] });
       b.coinRow(g1 + 1, g1 + 9, c.endRow - 3); // 9 coins
+      catwalk(b, g1, c.endX - 1, c.endRow); // scaffold over the foothill goons
       c = steppes(b, c.endX, c.endRow, { count: 4, stepH: 2, treadW: 2, dir: 1 }); // up to 18
       c = runway(b, c.endX, c.endRow, { len: 5 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
       c = gapJump(b, c.endX, c.endRow, { gap: 4 });
       c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 3, dir: 1 }); // summit: 14
-      c = runway(b, c.endX, c.endRow, { len: 8, rings: true }); // 3 coins
-      const g2 = c.endX; // summit security, 73+ tiles out
+      const ridge = c.endX; // the summit ridge line
+      c = runway(b, c.endX, c.endRow, { len: 13, rings: true }); // 6 coins
+      catwalk(b, ridge, c.endX - 1, c.endRow); // 13 columns of skyline catwalk
+      const g2 = c.endX; // summit security, far out
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'paparazzo'] });
       b.coinRow(g2 + 1, g2 + 9, c.endRow - 5); // 9 coins, above the drone
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      const rest = c.endX;
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      catwalk(b, rest, c.endX - 1, c.endRow); // shade over the breather
       c = crumbleBridge(b, c.endX, c.endRow, { len: 5 }); // the ridge gives way
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // down to 20
       c = gavelRun(b, c.endX, c.endRow); // 6 coins under the house lever
       c = spikeTrays(b, c.endX, c.endRow); // 6 coins — the chip sorter: two
-      // spike trays, one narrow island (was a free coinArc glide; 2026-08
-      // difficulty wave). 34 tiles past the checkpoint, in plain view.
+      // spike trays, one narrow island (2026-08 difficulty wave), in plain
+      // view past the checkpoint.
       c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
       c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // down to 26
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
@@ -440,7 +544,7 @@ export const world3: LevelDef[] = [
       c = gapJump(b, c.endX, c.endRow, { gap: 5 });
       c = secretPocket(b, c.endX, c.endRow, { index: 2 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
-      closeOut(b, c); // pad 5: no ring room
+      closeOut(b, c);
     },
   },
 
@@ -448,9 +552,9 @@ export const world3: LevelDef[] = [
   // w3a6 — OPTIONAL spur: the vault. Brick everywhere, two goldbars locked in
   // brick-lidded cells and a third in the DEEP VAULT — a warp-served counting
   // room under the lane, 16 coins deep (the act is named The Vault; now there
-  // is one). A teller counter to smash (Certified) or hop, and the world's
-  // second (last) Immunity badge. Coins run rich.
-  // Coins: 11 + 3 + 13 + 6 + 3 + 16 vault + 3 rings = 55 + 9 qblock = 64.
+  // is one). The service stairs climb to the UPPER SECURITY CORRIDOR (row 18,
+  // catwalk overhead) where the last Immunity badge sits in a reel; a teller
+  // counter to smash (Certified) or hop. Coins run rich.
   // -------------------------------------------------------------------------
   {
     id: 'w3a6',
@@ -459,10 +563,11 @@ export const world3: LevelDef[] = [
     title: 'The Vault',
     excuse: 'Opening the vault mid-rescue would trigger an audit. A very stable genius waits for the fiscal year to close.',
     theme: 'casino',
-    width: 212,
+    width: 228,
     build(b) {
       let c = runway(b, 0, 26, { len: 10, coinRow: 22, rings: true }); // 11 coins
       b.start(2, 25);
+      catwalk(b, 1, 8, 26); // lobby mezzanine
       c = brickGallery(b, c.endX, c.endRow, { len: 12, powerup: 'stamp' }); // 3 coin qb
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['pollster', 'lobbyist'] });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 }); // easy bar 1
@@ -471,13 +576,18 @@ export const world3: LevelDef[] = [
       c = gapJump(b, c.endX, c.endRow, { gap: 3 });
       c = vaultCell(b, c.endX, c.endRow, 1); // vault bar 1
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
-      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true });
+      c = steppes(b, c.endX, c.endRow, { count: 4, stepH: 2, treadW: 2, dir: 1 }); // up to 18
+      const sec = c.endX; // the upper security corridor
+      c = runway(b, c.endX, c.endRow, { len: 6, rings: true }); // 3 coins
+      catwalk(b, sec, c.endX - 1, c.endRow);
       c = slotBank(b, c.endX, c.endRow, ['coin', 'immunity', 'coin']); // the last badge
+      c = steppes(b, c.endX, c.endRow, { count: 4, stepH: 2, treadW: 2, dir: -1 }); // down to 26
+      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true });
       const g1 = c.endX; // the card-counting rat works deep in the vault
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'chipstack', 'lobbyist'] });
       b.coinRow(g1 + 1, g1 + 13, c.endRow - 3); // 13 coins
+      catwalk(b, g1, c.endX - 1, c.endRow); // guard walk over the pit crew
       c = vaultCell(b, c.endX, c.endRow, 2); // vault bar 2
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
       c = brickCache(b, c.endX, c.endRow); // 3 coins behind the teller wall
       c = warpVault(b, c.endX, c.endRow, { coins: 16, goldbar: 3 }); // THE deep vault
@@ -490,16 +600,16 @@ export const world3: LevelDef[] = [
       // Long approach: the bot arrives slow out of the pocket and needs the
       // full runup to carry a 5-gap.
       c = gapJump(b, c.endX, c.endRow, { gap: 5, approach: 6 });
-      closeOut(b, c); // pad 9: 3 ring coins
+      closeOut(b, c);
     },
   },
 
   // -------------------------------------------------------------------------
   // w3a7 — the neon midway: everything the peninsula sells at once. Bounce
-  // chains, drone escorts, a oneway marquee climb, the longest act in the
-  // world — plus an honest warp shortcut past the entourage gauntlet for
-  // players who press down on pipes. Gaps run at 5; the pre-castle exam.
-  // Coins: 11 + 9 + 3 + 6 + 9 + 3 + 2 + 13 + 7 = 63 entities + 2 qblock = 65.
+  // chains, drone escorts under lifted catwalks, a oneway marquee climb, the
+  // longest act in the world — plus an honest warp shortcut past the
+  // entourage gauntlet for players who press down on pipes. Gaps run at 5;
+  // the pre-castle exam.
   // -------------------------------------------------------------------------
   {
     id: 'w3a7',
@@ -512,35 +622,41 @@ export const world3: LevelDef[] = [
     build(b) {
       let c = runway(b, 0, 26, { len: 10, coinRow: 22, rings: true }); // 11 coins
       b.start(2, 25);
-      c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // 2 coin qb
+      catwalk(b, 1, 8, 26); // ticket-booth awning
+      c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'stamp' }); // 1 coin qb
       const g1 = c.endX;
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'lobbyist'] });
       b.coinRow(g1 + 1, g1 + 9, c.endRow - 3); // 9 coins
+      catwalk(b, g1, c.endX - 1, c.endRow); // midway scaffold
       c = springboardWall(b, c.endX, c.endRow, { wallH: 4 }); // up to 22
-      c = runway(b, c.endX, c.endRow, { len: 6, rings: true }); // 3 coins
+      c = runway(b, c.endX, c.endRow, { len: 4, rings: true });
       c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
       c = gapJump(b, c.endX, c.endRow, { gap: 5 });
       const g2 = c.endX; // midway security detail
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['paparazzo', 'pollster'] });
       b.coinRow(g2 + 1, g2 + 9, c.endRow - 5); // 9 coins above the drone
+      catwalk(b, g2, c.endX - 1, c.endRow, 6); // lifted rail clears the drone row
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
+      const rest = c.endX;
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
+      catwalk(b, rest, c.endX - 1, c.endRow);
       c = springboardWall(b, c.endX, c.endRow, { wallH: 5 }); // up to 17
-      c = spikeGuardedBar(b, c.endX, c.endRow, 1); // +2 coins — goldbar 1 now
-      // floats over a 2-deep spike trench (2026-08 difficulty wave: risk the
-      // loot, not the lane): arc clean off the spring wall and it pays;
-      // undershoot and the teeth take their cut.
+      c = spikeGuardedBar(b, c.endX, c.endRow, 1); // +2 coins — goldbar 1
+      // floats over a spike trench (risk the loot, not the lane): arc clean
+      // off the spring wall and it pays; undershoot and the teeth take their
+      // cut.
       // HONEST SHORTCUT (warp): press down here to skip the collapsing carpet
       // and the full entourage, surfacing on the gauntlet's far shoulder.
       // Walkers keep the 13-coin row; explorers keep their skin.
       c = runway(b, c.endX, c.endRow, { len: 4 });
       const skipX = c.endX - 3; // entry pipe on that runway's middle columns
       c = crumbleBridge(b, c.endX, c.endRow, { len: 6 });
-      const g3 = c.endX; // the full entourage, 116+ tiles out
+      const g3 = c.endX; // the full entourage, far out
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['paparazzo', 'chipstack', 'lobbyist'] });
       b.coinRow(g3 + 1, g3 + 13, c.endRow - 5); // 13 coins
       b.warpPipe(skipX, c.endRow - 2, 2, g3 + 13, c.endRow - 2, 2); // the skip
+      catwalk(b, g3, c.endX - 1, c.endRow, 6); // lifted rail over the entourage
       c = coinArc(b, c.endX, c.endRow, { gap: 5 }); // 7 coins
       const climbX = c.endX;
       c = onewayClimb(b, c.endX, c.endRow, { rise: 2 }); // marquee ledges, up to 15
@@ -548,19 +664,20 @@ export const world3: LevelDef[] = [
       c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
       c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // down to 21
-      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true });
+      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 3 });
       c = gapJump(b, c.endX, c.endRow, { gap: 5, approach: 2, landing: 2 });
       c = secretPocket(b, c.endX, c.endRow, { index: 2 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
-      closeOut(b, c); // pad 3: no ring room (the shortcut runway took it)
+      closeOut(b, c);
     },
   },
 
   // -------------------------------------------------------------------------
   // w3a8 — CASTLE: Jackpot Palace. Two house levers, a subpoena pipe field,
-  // a drone escort, then the staged Bowsonaro show in a 26-tile arena.
-  // Coins: 11 + 9 + 6 + 3 + 9 + 6 + 6 + 6 rings = 56 + 5 qblock = 61.
+  // a drone escort, the PALACE STAIRS up to the trophy gallery (row 18) and
+  // back down to the gaming floor, then the staged Bowsonaro show in a
+  // 26-tile arena. Castle: door ceremony, no pole, no pyramid.
   // -------------------------------------------------------------------------
   {
     id: 'w3a8',
@@ -569,32 +686,40 @@ export const world3: LevelDef[] = [
     title: 'Jackpot Palace',
     excuse: 'Bowsonaro took the princess and the jackpot, so I made a perfect phone call about it. Perfect. Ask anyone.',
     theme: 'casino',
-    width: 200,
+    width: 216,
     boss: true,
     cutsceneAfter: 'w3-end',
     build(b) {
       let c = runway(b, 0, 26, { len: 10, coinRow: 22, rings: true }); // 11 coins
       b.start(2, 25);
+      catwalk(b, 1, 8, 26); // red-carpet awning
       c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // 2 coin qb
       const g1 = c.endX;
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'pollster'] });
       b.coinRow(g1 + 1, g1 + 9, c.endRow - 3); // 9 coins
-      c = gavelRun(b, c.endX, c.endRow); // 6 coins, lever 1 (33 tiles out)
+      catwalk(b, g1, c.endX + 2, c.endRow); // gallery walk runs onto the lever runway
+      c = gavelRun(b, c.endX, c.endRow); // 6 coins, lever 1 (> 27 tiles out)
       c = gapJump(b, c.endX, c.endRow, { gap: 4 });
       b.enemy('gavel', c.endX - 2, c.endRow - 4); // lever 1.5 (2026-08
-      // difficulty wave): a second house lever stamps the gap LANDING (col
-      // 47) — time the jump and the slam together. A hurt, not a kill for
-      // Certified; 47 tiles from the start (> 27, idle-silent) and the
-      // checkpoint at 69 sits after it.
+      // difficulty wave): a second house lever stamps the gap LANDING — time
+      // the jump and the slam together. A hurt, not a kill for Certified;
+      // > 27 tiles from the start (idle-silent) and the checkpoint sits
+      // after it.
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
       c = slotBank(b, c.endX, c.endRow, ['coin', 'coin', 'coin']); // 3 coin qb
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
-      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true });
+      c = steppes(b, c.endX, c.endRow, { count: 4, stepH: 2, treadW: 2, dir: 1 }); // up to 18
+      const gal = c.endX; // the trophy gallery
+      c = runway(b, c.endX, c.endRow, { len: 8, rings: true }); // 3 coins
+      catwalk(b, gal, c.endX - 1, c.endRow);
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      c = steppes(b, c.endX, c.endRow, { count: 4, stepH: 2, treadW: 2, dir: -1 }); // down to 26
+      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true });
       const g2 = c.endX; // palace air cover
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['paparazzo', 'chipstack'] });
       b.coinRow(g2 + 1, g2 + 9, c.endRow - 5); // 9 coins above the drone
+      catwalk(b, g2, c.endX - 1, c.endRow, 6); // lifted rail clears the drone row
       c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
@@ -603,7 +728,7 @@ export const world3: LevelDef[] = [
       c = secretPocket(b, c.endX, c.endRow, { index: 2 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 });
       c = crumbleBridge(b, c.endX, c.endRow, { len: 4 }); // the red carpet collapses
-      closeArena(b, c); // pad 11 rings, arena, ground to the edge
+      closeArena(b, c); // pad rings, arena, ground to the edge
     },
   },
 ];

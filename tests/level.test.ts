@@ -436,12 +436,14 @@ describe('Level', () => {
     expect(level.finished).toBe(false);
 
     // Resolve the encounter externally (pens do this in real play): hp 0 ->
-    // the staged escape -> the pole unseals -> full ceremony completes.
+    // the staged escape -> the DOOR unseals. Castle acts have NO flagpole
+    // (boss OR flag, never both — the fight is the climax): the ceremony is
+    // door-only, so 'pole-slide' must never fire here.
     level.boss!.hp = 0;
     const after = run(level, 400, inp());
     expect(after).toContain('boss-escape');
     expect(after).toContain('goal');
-    expect(after).toContain('pole-slide');
+    expect(after).not.toContain('pole-slide');
     expect(after).toContain('door-in');
     expect(after).toContain('flag-plant');
     expect(level.finished).toBe(true);

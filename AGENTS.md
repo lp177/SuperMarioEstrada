@@ -38,8 +38,10 @@ the cutscene theatrics — that IS the joke.
 
 ### Cast
 - **Super Mario Estrada** — player. Red cap, pencil moustache, notary stamp.
-- **Mangiani** — green, honest, increasingly suspicious. Appears in cutscenes
-  and at level ends. The moral center; never the butt of the cruelty.
+- **Mangiani** (full name: LORENZO Mangiani) — green, honest, increasingly
+  suspicious. The moral center; never the butt of the cruelty. His cap wears
+  an 'L' (= Lorenzo): an 'M' on the green cap read as MARIO's letter —
+  parody initials stay (E = Estrada), first-name L for the green brother.
 - **Princess Impeach** — Trump in a Peach dress. Orange skin, yellow wig under
   the crown, tiny crown, huge hands (a running gag — hands are drawn BIG).
 - **Bowsonaro** — Bolsonaro in a spiked turtle shell. Rants about ballots and

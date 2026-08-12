@@ -153,11 +153,13 @@ export function drawTitleArt(ctx: CanvasRenderingContext2D, frame: number): void
   c.fillStyle = '#241640';
   c.fillRect(0, 240, VIEW_W, VIEW_H - 240);
 
+  // Impeach's HUGE hand waving from behind the castle (the gag never rests).
+  // Drawn BEFORE the castle: its sleeve angles down-left and is swallowed by
+  // the tower silhouette — the arm is attached to a body hidden behind it.
+  const wt = Math.sin(frame * 0.06);
+  bigHand(c, 588, 108 + wt * 8, 34, 0.55 + wt * 0.12, 110);
   // the castle, right of center
   castleSilhouette(c, 420, 240, 1.0);
-  // Impeach's HUGE hand waving from behind the castle (the gag never rests)
-  const wt = Math.sin(frame * 0.06);
-  bigHand(c, 588, 108 + wt * 8, 34, 0.35 + wt * 0.12);
 
   // Bowsonaro's spiked jersey shell "hiding" in a bush, left
   c.fillStyle = '#2f5230';

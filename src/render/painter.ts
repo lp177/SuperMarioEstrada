@@ -2047,15 +2047,15 @@ const MANGIANI_PAL: Record<PlayerSize, EstradaPal> = {
   },
 };
 
-/** Hand-pixeled 'M' (blocky, reads at disc scale). */
+/** Hand-pixeled 'L' (blocky, reads at disc scale). L for LORENZO Mangiani —
+ *  an 'M' on the GREEN cap read as Mario's letter (playtest confusion);
+ *  parody initials stay (E = Estrada), but the green brother wears his
+ *  canon first-name L. */
 function markM(ctx: Ctx, ink: boolean, x: number, y: number, s: number, c: string): void {
   if (ink) return; // the disc itself already carries the silhouette
   ctx.fillStyle = c;
-  ctx.fillRect(x - 2.2 * s, y - 2.6 * s, 1.2 * s, 5.2 * s); // left leg
-  ctx.fillRect(x + 1.0 * s, y - 2.6 * s, 1.2 * s, 5.2 * s); // right leg
-  ctx.fillRect(x - 1.2 * s, y - 2.6 * s, 1.0 * s, 1.2 * s); // shoulders
-  ctx.fillRect(x + 0.2 * s, y - 2.6 * s, 1.0 * s, 1.2 * s);
-  ctx.fillRect(x - 0.6 * s, y - 1.6 * s, 1.2 * s, 1.8 * s); // center dip
+  ctx.fillRect(x - 1.4 * s, y - 2.6 * s, 1.3 * s, 5.2 * s); // vertical stroke
+  ctx.fillRect(x - 1.4 * s, y + 1.4 * s, 3.2 * s, 1.2 * s); // the foot
 }
 
 /** Small Mangiani, facing +x, feet at y=0. ~22px tall (2 more than Estrada). */
@@ -2824,8 +2824,11 @@ export function drawGoal(ctx: Ctx, level: LevelLike, cam: CameraState, frame: nu
   const doorOpen = probe.doorOpen === true;
 
   // (a) THE FLAGPOLE — the classic scoring pole, 8 tiles before the door.
-  // Rendered on castle acts too: it stands inside the arena, past the boss.
-  drawFlagpole(ctx, baseX - GOAL.poleOffsetTiles * TILE, baseY, frame, planted);
+  // Boss acts have NO pole (boss OR flag, never both — the fight is the
+  // climax and the goal there is the door itself).
+  if (!level.def.boss) {
+    drawFlagpole(ctx, baseX - GOAL.poleOffsetTiles * TILE, baseY, frame, planted);
+  }
 
   const pal = THEME_PAL[level.def.theme];
   const x0 = baseX - W / 2;

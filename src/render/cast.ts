@@ -293,15 +293,33 @@ export function skeleton(c: Ctx, x: number, y: number, s: number, o: SkeletonOpt
 }
 
 // ============================================================================
-// THE HANDS. Enormous. White-gloved. Always.
+// THE HANDS. Enormous. White-gloved. Always — and always ATTACHED.
+//
+// THE ATTACHMENT RULE (playtest-enforced; third anchoring-class bug): an
+// oversized glove may NEVER float. Wherever it appears there must be a
+// continuous visual chain BODY -> shoulder -> gown sleeve -> white cuff ->
+// glove, with the arm angle plausibly reaching the glove. Use `bigArm` when
+// the shoulder is in frame; a bare `bigHand` draws its own sleeve stub which
+// must run into the owner's body or behind an occluder/frame edge.
 // ============================================================================
 
-/** One HUGE white-gloved hand, palm out, fingers up. cx,cy = palm center. */
-export function bigHand(c: Ctx, cx: number, cy: number, r: number, tilt: number): void {
+/** One HUGE white-gloved hand, palm out, fingers up. cx,cy = palm center.
+ *  `sleeve` = length of the built-in pink gown-sleeve stub drawn wrist-down
+ *  in the tilted frame (default 1.5*r). Pass 0 ONLY when a full arm chain is
+ *  supplied by `bigArm`. */
+export function bigHand(c: Ctx, cx: number, cy: number, r: number, tilt: number, sleeve = r * 1.5): void {
   c.save();
   c.translate(cx, cy);
   c.rotate(tilt);
-  // cuff band — the glove is anchored to a sleeve behind it
+  if (sleeve > 0) {
+    // the gown sleeve the glove grows out of, flaring toward the body
+    poly(c, [
+      [-r * 0.56, r * 0.95], [r * 0.56, r * 0.95],
+      [r * 0.74, r * 0.95 + sleeve], [-r * 0.74, r * 0.95 + sleeve],
+    ], P.peachPink, 2.5);
+    seg(c, 0, r * 1.15, 0, r * 0.9 + sleeve, 'rgba(0,0,0,0.15)', Math.max(2, r * 0.05)); // fabric fold
+  }
+  // white cuff band — the glove is anchored INTO the sleeve, never floating
   rect(c, -r * 0.62, r * 0.8, r * 1.24, r * 0.52, P.glove, Math.max(2, r * 0.05));
   ell(c, 0, 0, r, r * 1.1, P.glove);
   for (let i = 0; i < 4; i++) {
@@ -315,6 +333,31 @@ export function bigHand(c: Ctx, cx: number, cy: number, r: number, tilt: number)
   c.beginPath(); c.arc(0, r * 0.15, r * 0.55, Math.PI * 1.15, Math.PI * 1.85); c.stroke();
   c.beginPath(); c.arc(0, r * 0.42, r * 0.62, Math.PI * 1.2, Math.PI * 1.8); c.stroke();
   c.restore();
+}
+
+/** THE full arm chain for the glove: a tapered gown sleeve from a shoulder
+ *  point ON the owner's body down to the glove's wrist, then the cuffed glove
+ *  itself. (sx,sy) = shoulder anchor on the body; (cx,cy) = palm center.
+ *  Prefer this over a bare `bigHand` whenever the shoulder is in frame. */
+export function bigArm(
+  c: Ctx, sx: number, sy: number, cx: number, cy: number, r: number, tilt: number,
+  sleeveCol: string = P.peachPink, shoulderW?: number,
+): void {
+  const wx = cx - Math.sin(tilt) * r * 1.05;   // the wrist, just under the cuff
+  const wy = cy + Math.cos(tilt) * r * 1.05;
+  const dx = wx - sx, dy = wy - sy;
+  const len = Math.hypot(dx, dy) || 1;
+  const px = -dy / len, py = dx / len;         // sleeve cross direction
+  // shoulder-end half width: matches the owner's puff sleeve, so a colossal
+  // hand reads as an arm INFLATING toward the glove, not a fat tube
+  const w0 = Math.min(shoulderW ?? r * 0.55, len * 0.45);
+  const w1 = r * 0.6;                          // wrist-end half width, meets the cuff
+  poly(c, [
+    [sx - px * w0, sy - py * w0], [sx + px * w0, sy + py * w0],
+    [wx + px * w1, wy + py * w1], [wx - px * w1, wy - py * w1],
+  ], sleeveCol, 2.5);
+  seg(c, sx + dx * 0.18, sy + dy * 0.18, wx - dx * 0.12, wy - dy * 0.12, 'rgba(0,0,0,0.14)', 2); // fabric fold
+  bigHand(c, cx, cy, r, tilt, 0);              // the arm IS the sleeve — no stub
 }
 
 // ============================================================================
@@ -497,10 +540,12 @@ export function drawEstrada(c: Ctx, x: number, y: number, s: number, o: EstradaO
 
 export interface ImpeachOpts {
   facing?: 1 | -1;
-  /** 'hidden' = no oversized hand from the rig (a scene-composed foreground
-   *  hand takes over — never draw both). */
+  /** 'hidden' = no oversized hand from the rig (a scene-composed hand takes
+   *  over — compose it with `bigArm` from her shoulder; never draw both). */
   hands?: 'wave' | 'coffee-wave' | 'phone' | 'chalk' | 'down' | 'hidden';
-  handScale?: number;    // 1 = merely huge. >1 = colossal.
+  /** 1 = merely huge. Rig-capped at 1.7 (~1.6x her head): the gag is a hand
+   *  comically too big for the body, not a parade balloon. */
+  handScale?: number;
   waveT?: number;        // animation clock for the wave + hair wisp
   mouth?: 'smug' | 'open' | 'pout';
   wigOn?: boolean;       // false = the reveal
@@ -508,7 +553,7 @@ export interface ImpeachOpts {
 
 export function drawImpeach(c: Ctx, x: number, y: number, s: number, o: ImpeachOpts = {}): void {
   const f = o.facing ?? 1;
-  const hs = (o.handScale ?? 1) * 14 * s;   // palm radius — the running gag
+  const hs = Math.min(o.handScale ?? 1, 1.7) * 14 * s;   // palm radius — the running gag, capped
   const wt = o.waveT ?? 0;
   const hands = o.hands ?? 'wave';
   const mouth = o.mouth ?? 'pout';
@@ -624,7 +669,10 @@ export function drawImpeach(c: Ctx, x: number, y: number, s: number, o: ImpeachO
   // THE HAND. Enormous, white-gloved — and exactly ONE oversized hand per
   // appearance: the gag is composed, never duplicated. The other arm stays
   // modest (dainty, even — the contrast IS the joke) or tucked away.
+  // Every mode routes through `bigArm`: shoulder -> sleeve -> cuff -> glove,
+  // one continuous chain (the attachment rule).
   const armCol = P.peachPink;
+  const shX = x + f * 13 * s, shY2 = y - 62 * s;   // the puff-sleeve shoulder anchor
   /** The modest second arm: pink sleeve down to a normal-sized glove. */
   const smallArm = (wx: number, wy: number): void => {
     poly(c, [[x - f * 10 * s, y - 62 * s], [wx + f * 2 * s, wy - 3 * s], [wx - f * 3 * s, wy - 7 * s], [x - f * 14 * s, y - 65 * s]], armCol, 2.5);
@@ -633,9 +681,7 @@ export function drawImpeach(c: Ctx, x: number, y: number, s: number, o: ImpeachO
   if (hands === 'wave' || hands === 'coffee-wave') {
     const a = Math.sin(wt * 0.12) * 0.35;
     const hyw = y - 74 * s + Math.sin(wt * 0.12) * 4 * s;
-    // sleeve anchors the big glove to the shoulder
-    poly(c, [[x + f * 10 * s, y - 62 * s], [x + f * 30 * s, hyw + hs * 0.9], [x + f * 36 * s, hyw + hs * 0.7], [x + f * 16 * s, y - 56 * s]], armCol, 2.5);
-    bigHand(c, x + f * 34 * s, hyw, hs, f * (0.3 + a));
+    bigArm(c, shX, shY2, x + f * 33 * s, hyw, hs, f * (0.3 + a));
     if (hands === 'coffee-wave') {
       smallArm(x - f * 21 * s, y - 46 * s);
       coffeeCup(c, x - f * 21 * s, y - 52 * s, s * 0.8, wt); // dainty espresso in the NORMAL hand
@@ -643,21 +689,18 @@ export function drawImpeach(c: Ctx, x: number, y: number, s: number, o: ImpeachO
       smallArm(x - f * 20 * s, y - 44 * s);
     }
   } else if (hands === 'phone') {
-    poly(c, [[x + f * 10 * s, y - 62 * s], [x + f * 24 * s, y - 52 * s], [x + f * 28 * s, y - 56 * s], [x + f * 14 * s, y - 65 * s]], armCol, 2.5);
-    bigHand(c, x + f * 26 * s, y - 46 * s, hs, f * 1.35);
+    bigArm(c, shX, shY2, x + f * 26 * s, y - 46 * s, hs, f * 1.35);
     rect(c, x + f * 20 * s, y - 66 * s, 12 * s, 20 * s, '#20222c', 2); // phone pinched in the glove, comically small
     flat(c, x + f * 22 * s, y - 64 * s, 8 * s, 14 * s, '#8fd8ff');
     smallArm(x - f * 20 * s, y - 44 * s);
   } else if (hands === 'chalk') {
-    poly(c, [[x + f * 10 * s, y - 64 * s], [x + f * 28 * s, y - 62 * s], [x + f * 30 * s, y - 68 * s], [x + f * 13 * s, y - 68 * s]], armCol, 2.5);
-    bigHand(c, x + f * 32 * s, y - 66 * s, hs, f * 0.4);
-    seg(c, x + f * 32 * s, y - 78 * s, x + f * 36 * s, y - 86 * s, '#fff', 4); // chalk pinched in the fingers
+    bigArm(c, shX, shY2, x + f * 30 * s, y - 66 * s, hs, f * 0.4);
+    seg(c, x + f * 30 * s, y - 78 * s, x + f * 34 * s, y - 86 * s, '#fff', 4); // chalk pinched in the fingers
     smallArm(x - f * 20 * s, y - 44 * s);
   } else if (hands === 'down') {
     // one big glove resting at the gown's side (clear of the tie); the other
     // hand tucked behind the skirt (the one-oversized-hand rule)
-    poly(c, [[x + f * 10 * s, y - 62 * s], [x + f * 26 * s, y - 44 * s], [x + f * 31 * s, y - 48 * s], [x + f * 15 * s, y - 65 * s]], armCol, 2.5);
-    bigHand(c, x + f * 30 * s, y - 30 * s, hs * 0.95, f * 0.35);
+    bigArm(c, shX, shY2, x + f * 29 * s, y - 30 * s, hs * 0.95, f * 0.35);
   }
   // hands === 'hidden': both arms behind the gown — the scene composes its
   // own single dramatic hand instead.
@@ -942,7 +985,7 @@ export function drawMangiani(c: Ctx, x: number, y: number, s: number, o: Mangian
     c.beginPath(); c.arc(x + f * 4.5 * s, my + 3 * s, 3.6 * s, 1.15 * Math.PI, 1.85 * Math.PI);
     c.strokeStyle = INK; c.lineWidth = 2.5; c.stroke();
   }
-  // green cap with 'M' medallion
+  // green cap with 'L' medallion (Lorenzo Mangiani — 'M' read as Mario's)
   c.beginPath(); c.arc(x, hy - 8 * s, 14 * s, Math.PI, 0); c.closePath();
   c.fillStyle = P.mangGreen; c.fill(); c.lineWidth = LW; c.strokeStyle = INK; c.stroke();
   c.save();
@@ -953,7 +996,7 @@ export function drawMangiani(c: Ctx, x: number, y: number, s: number, o: Mangian
   c.restore();
   rect(c, x + (f > 0 ? 6 : -20) * s, hy - 12 * s, 14 * s, 4.5 * s, P.mangGreen, 2);
   disc(c, x, hy - 15 * s, 6.5 * s, '#fff', 2);
-  txt(c, 'M', x, hy - 14.4 * s, Math.max(7, 9 * s), P.mangDark, 'center', false);
+  txt(c, 'L', x, hy - 14.4 * s, Math.max(7, 9 * s), P.mangDark, 'center', false);
 }
 
 // ============================================================================

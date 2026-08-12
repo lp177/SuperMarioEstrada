@@ -10,20 +10,30 @@
 // Authoring rules honored here (see AGENTS.md + tests/actContract.ts):
 // - Acts are motif chains on {endX, endRow}; local helpers below extend the
 //   vocabulary (spike pits, stepped chute drops, oneway sky ladders, goldbar
-//   vaults, alcove pockets, crumble-over-spikes) and validate LOUDLY like
-//   motifs do.
+//   vaults, alcove pockets, crumble-over-spikes, drainage basins, maintenance
+//   catwalks) and validate LOUDLY like motifs do.
 // - The mandatory route is flow-bot-clearable: gaps <= 5, climbs <= 3 rows
 //   (walls up to ~6 are fine — the bot full-holds), drops land on wide strips.
 // - 2026-08 playtest retune: descents step in <= 2-row treads (rule 8 — a
 //   sheer safe face is a nap), every void gap gets >= 8 flat sprint tiles
-//   before its lip (rule 5 at runMax 3.8), and no brick lid ever overhangs
-//   a pocket's exit arc (rule 9 / the playtest trap).
+//   before its lip (rule 5 at runMax), and no brick lid ever overhangs a
+//   pocket's exit arc (rule 9 / the playtest trap).
+// - RICHNESS WAVE (2026-08, rules 11-14): every act dives and climbs — the
+//   sewer's verticality is basins (the lane drops 4 rows onto a drained
+//   floor under the decommissioned walkway) and ridge catwalks (the lane
+//   climbs 4-6 rows in 2-row treads and runs under a oneway service grate).
+//   Both double as the rule-12 parallel path: floor vs walkway, lane vs
+//   grate, always >= 4 rows apart for >= 12 contiguous columns. Every
+//   non-boss act ends in finishTo's two-sided pre-pole PYRAMID (two-sided
+//   because a sheer-backed staircase would scan as a rule-8 recess): its
+//   4-row peak puts the certified >= 90% pole grab inside a plain run-jump
+//   arc, and the pole-to-door runway stays flat (ceremony walk contract).
 // - WARP FEATURES (one per flavor, rule 7-clean, laid at the END of build so
 //   later tile work can never overwrite a mouth): w2a1 skim vault (bonus
 //   coin room under the checkpoint stretch), w2a5 service bypass (honest
-//   shortcut past the crumble/gavel gauntlet), w2a7 money vault (goldbar 4
-//   + hoard under the final stretch). Vault rooms sit below the lane and are
-//   fed/drained by warp pairs; the flood-fill gate follows the links.
+//   shortcut past the gallery/gauntlet/basin stretch), w2a7 money vault
+//   (goldbar 4 + hoard under the finale). Vault rooms sit below the lane and
+//   are fed/drained by warp pairs; the flood-fill gate follows the links.
 // - Idle silence: everything that can walk/fly/hop TOWARD an idle player is
 //   placed beyond its 600-frame reach (rats ~41 tiles, paparazzi ~30,
 //   chipstacks ~14, walkers ~19). Gavels & lawyers sit > 27 tiles out.
@@ -197,14 +207,92 @@ function crumbleSpikes(
   return { endX: x + 4 + len, endRow: row };
 }
 
+/** catwalk — a maintenance catwalk over the main channel (RICHNESS WAVE):
+ *  flat lane at `row` with a oneway service grate hanging 5 rows overhead —
+ *  jump up through the grate, drop off its open ends, so BOTH lanes are
+ *  flood-reachable. This is W2's stock rule-12 parallel path: 5 rows of
+ *  separation across len-2 columns. The lane scan ignores surfaces >= 3
+ *  rows up, so the grate never captures the mandatory lane, and the bot
+ *  never interacts with oneways above its head. Optional coins pay the high
+ *  road; opts.goldbar floats a bar a hop over the grate. */
+function catwalk(
+  b: LevelBuilderLike,
+  x: number,
+  row: number,
+  opts: { len: number; coins?: boolean; goldbar?: number },
+): MotifEnd {
+  const len = requireInt(opts.len, 10, 40, 'catwalk len');
+  const grate = row - 5;
+  if (grate < 3) throw new Error(`catwalk: grate row ${grate} needs headroom (row >= 8)`);
+  b.ground(x, x + len - 1, row);
+  b.oneway(x + 1, x + len - 2, grate);
+  if (opts.coins) b.coinRow(x + 2, x + len - 3, grate - 1);
+  if (opts.goldbar !== undefined) {
+    b.goldbar(opts.goldbar, x + Math.floor(len / 2), grate - 2);
+  }
+  return { endX: x + len, endRow: row };
+}
+
+/** basin — a drainage basin (RICHNESS WAVE): the lane dives `depth` rows in
+ *  2-row treads (never a recess — rules 8/9 by construction) onto a wide
+ *  drained floor, while the decommissioned WALKWAY (oneway) still spans the
+ *  basin 5 rows over the floor. One feature, two rules: the dive is relief
+ *  (rule 11 — 4 steps and `depth` rows of range at depth 4) and floor vs
+ *  walkway is a real parallel path (rule 12 — `len` dual columns). Optional
+ *  coins ride the walkway; opts.goldbar floats a bar a hop over it. */
+function basin(
+  b: LevelBuilderLike,
+  x: number,
+  row: number,
+  opts: { len: number; depth?: number; coins?: boolean; goldbar?: number },
+): MotifEnd {
+  const depth = requireInt(opts.depth ?? 4, 4, 6, 'basin depth');
+  if (depth % 2 !== 0) throw new Error(`basin depth must be even (2-row treads), got ${depth}`);
+  const len = requireInt(opts.len, 8, 40, 'basin len');
+  const floor = row + depth;
+  if (floor > b.heightTiles - 6) {
+    throw new Error(`basin: floor row ${floor} leaves the running lane`);
+  }
+  const treads = depth / 2 - 1;
+  b.ground(x, x + 1, row); // entry rim
+  for (let i = 0; i < treads; i++) {
+    b.ground(x + 2 + 2 * i, x + 3 + 2 * i, row + 2 * (i + 1)); // down treads
+  }
+  const fx0 = x + 2 + 2 * treads;
+  const fx1 = fx0 + len - 1;
+  b.ground(fx0, fx1, floor); // the drained floor
+  b.oneway(fx0, fx1, floor - 5); // the old walkway, still spanning the basin
+  if (opts.coins) b.coinRow(fx0 + 1, fx1 - 1, floor - 6);
+  if (opts.goldbar !== undefined) {
+    b.goldbar(opts.goldbar, fx0 + Math.floor(len / 2), floor - 7);
+  }
+  for (let i = 0; i < treads; i++) {
+    b.ground(fx1 + 1 + 2 * i, fx1 + 2 + 2 * i, floor - 2 * (i + 1)); // up treads
+  }
+  const ex = fx1 + 1 + 2 * treads;
+  b.ground(ex, ex + 1, row); // exit rim
+  return { endX: ex + 2, endRow: row };
+}
+
 /** finishTo — the act's closing stretch: flat ground running to the map edge,
- *  goal door 8 tiles before `width`. Throws if the chain over/under-ran. */
+ *  goal door 8 tiles before `width` — and THE PRE-POLE PYRAMID (rule 14): a
+ *  two-sided 2-row-tread pyramid whose peak, 4 rows over the goal line, puts
+ *  the certified (>= 90%) pole grab inside a plain run-jump arc. Two-sided
+ *  because a sheer-backed staircase would scan as a rule-8 recess; fully
+ *  LEFT of the flagpole (pole col = width-16) so the pole-to-door runway
+ *  stays flat (ceremony walk contract). Needs >= 24 columns so the pyramid
+ *  sits on finishTo's own ground — throws if the chain over/under-ran. */
 function finishTo(b: LevelBuilderLike, x: number, row: number, width: number): void {
   const span = width - x;
-  if (span < 10 || span > 34) {
-    throw new Error(`finishTo: ${span} tiles left before width ${width} (x=${x}) — motif chain over/under-ran`);
+  if (span < 24 || span > 34) {
+    throw new Error(
+      `finishTo: ${span} tiles left before width ${width} (x=${x}) — needs 24..34 (pyramid + pole + door)`,
+    );
   }
   b.ground(x, width - 1, row);
+  b.ground(width - 22, width - 21, row - 2); // up tread
+  b.ground(width - 20, width - 19, row - 4); // the peak: launch for the top grab
+  b.ground(width - 18, width - 17, row - 2); // down tread (two-sided!)
   b.goal(width - 8, row - 1);
 }
 
@@ -216,10 +304,13 @@ export const world2: LevelDef[] = [
   // -------------------------------------------------------------------------
   // w2a1 — the descent into the laundering office: two big stepped coin
   // chutes (16 -> 20 -> 24, then steppes to 28), oneway grate ladders rising
-  // to skimmed goldbars. Gentle: gaps of 3, walker enemies only. NEW: the
-  // SKIM VAULT — a warp pipe on the long runway dives into a coin room
-  // carved under the checkpoint stretch (the skimmed take, still in the
-  // dryer), and a second pipe pops back up on the gap-jump landing ahead.
+  // to skimmed goldbars. Gentle: gaps of 3, walker enemies only. The SKIM
+  // VAULT — a warp pipe on the catwalk stretch dives into a coin room carved
+  // under the checkpoint stretch (the skimmed take, still in the dryer), and
+  // a second pipe pops back up on the gap-jump landing ahead. RICHNESS: the
+  // drain runway is now a full maintenance CATWALK (rule 12's parallel path
+  // joins the vault room's 13 dual columns), and the finale carries the
+  // pre-pole pyramid.
   // -------------------------------------------------------------------------
   {
     id: 'w2a1',
@@ -228,7 +319,7 @@ export const world2: LevelDef[] = [
     title: 'Coin Chute Drop',
     excuse: 'The intel came from a perfect phone call. The most perfect. I certified it myself.',
     theme: 'sewer',
-    width: 188,
+    width: 200,
     build(b) {
       let c = runway(b, 0, 16, { len: 12, coinRow: 12, rings: true }); // -> 12 (16 coins)
       b.start(2, 15);
@@ -237,7 +328,7 @@ export const world2: LevelDef[] = [
       c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // -> 52 (+2)
       c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 60
       c = chuteDrop(b, c.endX, c.endRow, { drop: 4, land: 16 }); // -> 79, row 24 (+3, 2-row treads)
-      c = runway(b, c.endX, c.endRow, { len: 15, coinRow: 21 }); // -> 94 (+13)
+      c = catwalk(b, c.endX, c.endRow, { len: 15, coins: true }); // -> 94 (+11, grate @ 19 over the drain)
       c = checkpointRest(b, c.endX, c.endRow); // -> 100 (+3, checkpoint @ 96)
       c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 105
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // -> 111
@@ -250,14 +341,14 @@ export const world2: LevelDef[] = [
       c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 162
       c = skyLadder(b, c.endX, c.endRow, { index: 3 }); // -> 170
       c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 176
-      finishTo(b, c.endX, c.endRow, 188); // coins total: 45 + 14 vault
-      // THE SKIM VAULT (bonus): stand on the drain pipe at cols 84-85 on the
-      // long runway, press down, loot the hoard carved under the checkpoint
-      // stretch, ride the far pipe back up to a flush grate on the gap-jump
-      // landing (cols 118-119). Laid after the chain so no later tile work
-      // can overwrite a mouth (rule 7).
+      finishTo(b, c.endX, c.endRow, 200); // pyramid @ 178-183 (peak 24), pole @ 184, door @ 192
+      // THE SKIM VAULT (bonus): stand on the drain pipe at cols 84-85 under
+      // the catwalk grate, press down, loot the hoard carved under the
+      // checkpoint stretch, ride the far pipe back up to a flush grate on
+      // the gap-jump landing (cols 118-119). Laid after the chain so no
+      // later tile work can overwrite a mouth (rule 7).
       b.room(98, 110, 28, 31); // vault: floor row 32, ceiling row 27
-      b.warpPipe(84, 22, 2, 98, 30, 2); // runway drain -> vault floor
+      b.warpPipe(84, 22, 2, 98, 30, 2); // catwalk drain -> vault floor
       b.warpPipe(108, 30, 2, 118, 24, 2); // vault -> flush grate ahead
       b.coinRow(101, 107, 30); // the hoard: 14 coins
       b.coinRow(101, 107, 31);
@@ -265,13 +356,13 @@ export const world2: LevelDef[] = [
   },
 
   // -------------------------------------------------------------------------
-  // w2a2 — the wash lanes proper: long coin-laden conveyors ("delicates"),
-  // the world's first lawyer plant, first spike pits, and the goldpen debuts
-  // in a brick gallery. Decor cue: dryer drums full of coin rolls.
-  // Retuned 2026-08: the first void gap gets a real sprint runway (the old
-  // 5-tile approach launched jumps under speed — 19+ deaths in playtest),
-  // and secret 0's lidded tunnel became an alcovePocket (no lid over the
-  // exit arc).
+  // w2a2 — the wash lanes proper: the world's first lawyer plant, first spike
+  // pit, and the goldpen debuts... nowhere — Impeach moved it to w2a5. Decor
+  // cue: dryer drums full of coin rolls. RICHNESS: after the checkpoint the
+  // lane climbs the WASH GANTRY (a 6-row ridge under a service grate), drops
+  // back past a spike pit and dives into the first drainage basin — the
+  // profile runs 20 high to 30 deep with a parallel lane over both the ridge
+  // and the basin floor.
   // -------------------------------------------------------------------------
   {
     id: 'w2a2',
@@ -282,30 +373,27 @@ export const world2: LevelDef[] = [
     theme: 'sewer',
     width: 190,
     build(b) {
-      let c = runway(b, 0, 26, { len: 12, coinRow: 22, rings: true }); // -> 12 (16 coins)
+      let c = runway(b, 0, 26, { len: 11, coinRow: 22, rings: true }); // -> 11 (15 coins)
       b.start(2, 25);
-      c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // -> 22 (+2)
-      c = gapJump(b, c.endX, c.endRow, { gap: 3 }); // -> 31
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 42
-      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // -> 53 (lawyer @ 44)
-      c = runway(b, c.endX, c.endRow, { len: 3 }); // -> 56 (sprint runway: 8 flat tiles before the lip)
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 66 (+6, void gap 59-62)
-      c = alcovePocket(b, c.endX, c.endRow, { index: 0 }); // -> 71 (lid over the alcove, exit well open)
-      c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 79
-      c = checkpointRest(b, c.endX, c.endRow); // -> 85 (+3, checkpoint @ 81)
-      c = spikePit(b, c.endX, c.endRow, { gap: 3 }); // -> 94
-      c = runway(b, c.endX, c.endRow, { len: 10, coinRow: 22, rings: true }); // -> 104 (+11)
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // -> 110
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'chipstack'] }); // -> 121 (rat @ 113)
-      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 126
-      c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'goldpen' }); // -> 134 (+1)
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 144 (+6)
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 }); // -> 150
-      c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 160
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 165
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 171
-      c = skyLadder(b, c.endX, c.endRow, { index: 4 }); // -> 179
-      finishTo(b, c.endX, c.endRow, 190); // coins total: 45
+      c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // -> 21 (+2)
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 32
+      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // -> 43 (lawyer @ 35)
+      c = runway(b, c.endX, c.endRow, { len: 3 }); // -> 46 (sprint runway: 8 flat tiles before the lip)
+      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 56 (+6, void gap 49-52)
+      c = alcovePocket(b, c.endX, c.endRow, { index: 0 }); // -> 61 (lid over the alcove, exit well open)
+      c = checkpointRest(b, c.endX, c.endRow); // -> 67 (+3, checkpoint @ 63)
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: 1 }); // -> 73, row 20
+      c = catwalk(b, c.endX, c.endRow, { len: 16, coins: true, goldbar: 0 }); // -> 89 (+12, THE WASH GANTRY)
+      c = skyLadder(b, c.endX, c.endRow, { index: 1 }); // -> 97
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // -> 103, row 26
+      c = spikePit(b, c.endX, c.endRow, { gap: 3 }); // -> 112
+      c = basin(b, c.endX, c.endRow, { len: 14, coins: true, goldbar: 2 }); // -> 134 (+12, floor 30)
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'chipstack'] }); // -> 145 (rat @ 137)
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 151
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 156
+      c = goldbarVault(b, c.endX, c.endRow, { index: 4 }); // -> 161
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 166
+      finishTo(b, c.endX, c.endRow, 190); // pyramid @ 168-173 (peak 22), pole @ 174, door @ 182
     },
   },
 
@@ -313,7 +401,10 @@ export const world2: LevelDef[] = [
   // w2a3 — the accountant rats' local. Rats EVERYWHERE (all beyond their
   // 41-tile idle reach), the world's first gavels banging like meeting
   // hammers. Decor cue: union posters ("LOCAL 512 — SCURRIERS & SKIMMERS"),
-  // a strike-vote ballot box, tiny picket signs.
+  // a strike-vote ballot box, tiny picket signs. RICHNESS: after the return
+  // duct the hall floor gives way to a spike trench, then the lane climbs
+  // the STRIKE BALCONY — basin at 24, one more tread to a 22-row catwalk —
+  // before the pyramid finale (profile 18..31).
   // -------------------------------------------------------------------------
   {
     id: 'w2a3',
@@ -324,57 +415,58 @@ export const world2: LevelDef[] = [
     theme: 'sewer',
     width: 196,
     build(b) {
-      let c = runway(b, 0, 24, { len: 10, coinRow: 20, rings: true }); // -> 10 (11 coins)
+      let c = runway(b, 0, 24, { len: 8, coinRow: 20, rings: true }); // -> 8 (9 coins)
       b.start(2, 23);
-      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 3, dir: -1 }); // -> 16, row 28
-      c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // -> 26 (+2)
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 37
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 47 (+6)
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'rat'] }); // -> 58 (rats @ 50, 54)
-      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 63
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 74 (gavel @ 70)
-      c = checkpointRest(b, c.endX, c.endRow); // -> 80 (+3, checkpoint @ 76)
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 3, dir: -1 }); // -> 14, row 28
+      c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // -> 24 (+2)
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 35
+      c = brickGallery(b, c.endX, c.endRow, { len: 10 }); // -> 45 (+3, the minutes shelf)
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'rat'] }); // -> 56 (rats @ 48, 52)
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 61
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 72 (gavel @ 68)
+      c = checkpointRest(b, c.endX, c.endRow); // -> 78 (+3, checkpoint @ 74)
       // THE RETURN DUCT (2026-08 difficulty wave): the union hall's low
-      // ceiling duct replaces the old free runway. A brick lintel at row 25
-      // grows three single-column spike TEETH from its underside (rule 10:
-      // anchored to the solid directly above) at cols 85/87/89, with clean
-      // standing room between them. Small Estrada walks under untouched;
-      // Certified must duck-slide each tooth (ducking keeps momentum, kills
-      // acceleration — one tooth is exactly one slide) or pay a shrink. The
-      // flow bot is small and strolls the clear row; crawl coins pay the
-      // indignity. Idle-safe: nothing here has a clock.
-      b.ground(80, 93, 28); // -> 94 duct floor
-      b.platform(85, 89, 25, 'brick'); // the duct lintel
-      b.spikes(85, 85, 26); // tooth 1 (hangs FROM the lintel)
-      b.spikes(87, 87, 26); // tooth 2
-      b.spikes(89, 89, 26); // tooth 3
-      b.coinRow(85, 89, 27); // 5 crawl coins through the duct
-      b.coinRow(81, 84, 24); // 4 coins on the approach
-      b.coinRow(90, 93, 24); // 4 coins on the exit
-      b.coinRow(81, 83, 25); // 3 ring coins before the lintel
-      b.coinRow(91, 93, 25); // 3 ring coins after (+19 total)
-      c = { endX: 94, endRow: 28 }; // -> 94, same handover as the old runway
-      c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 102
-      c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 112
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'pollster', 'rat'] }); // -> 127
-      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 132
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // -> 138
-      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: 1 }); // -> 142, row 24
-      c = brickGallery(b, c.endX, c.endRow, { len: 8 }); // -> 150 (+2)
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 161
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 }); // -> 167
+      // ceiling duct. A brick lintel at row 25 grows three single-column
+      // spike TEETH from its underside (rule 10: anchored to the solid
+      // directly above) at cols 83/85/87, with clean standing room between
+      // them. Small Estrada walks under untouched; Certified must duck-slide
+      // each tooth (ducking keeps momentum, kills acceleration — one tooth
+      // is exactly one slide) or pay a shrink. The flow bot is small and
+      // strolls the clear row; crawl coins pay the indignity. Idle-safe:
+      // nothing here has a clock.
+      b.ground(78, 91, 28); // -> 92 duct floor
+      b.platform(83, 87, 25, 'brick'); // the duct lintel
+      b.spikes(83, 83, 26); // tooth 1 (hangs FROM the lintel)
+      b.spikes(85, 85, 26); // tooth 2
+      b.spikes(87, 87, 26); // tooth 3
+      b.coinRow(83, 87, 27); // 5 crawl coins through the duct
+      b.coinRow(79, 82, 24); // 4 coins on the approach
+      b.coinRow(88, 91, 24); // 4 coins on the exit
+      b.coinRow(79, 81, 25); // 3 ring coins before the lintel
+      b.coinRow(89, 91, 25); // 3 ring coins after (+19 total)
+      c = { endX: 92, endRow: 28 }; // -> 92, same handover as a runway
+      c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 102 (floor 31, the trench)
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: 1 }); // -> 106, row 24
+      c = basin(b, c.endX, c.endRow, { len: 15, coins: true, goldbar: 0 }); // -> 129 (+13, floor 28)
+      c = steppes(b, c.endX, c.endRow, { count: 1, stepH: 2, treadW: 2, dir: 1 }); // -> 131, row 22
+      c = catwalk(b, c.endX, c.endRow, { len: 14, coins: true, goldbar: 1 }); // -> 145 (+10, THE STRIKE BALCONY)
+      c = goldbarVault(b, c.endX, c.endRow, { index: 2 }); // -> 150
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 155
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 161
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 167
       c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 172
-      c = skyLadder(b, c.endX, c.endRow, { index: 3 }); // -> 180
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 186
-      finishTo(b, c.endX, c.endRow, 196); // coins total: 42
+      finishTo(b, c.endX, c.endRow, 196); // pyramid @ 174-179 (peak 18), pole @ 180, door @ 188
     },
   },
 
   // -------------------------------------------------------------------------
   // w2a4 — OPTIONAL spur, harder but richer: crumble decks over spike beds
-  // everywhere; 2 goldbars in plain sight (perches), 3 hidden (two brick-lid
-  // vaults below the lane, one high sky ladder). Decor cue: prop skeletons of
-  // "previous rescuers" with price stickers still on.
+  // everywhere; 1 goldbar in plain sight (perch), 4 hidden (two brick-lid
+  // vaults below the lane, one over the catwalk, one high sky ladder). Decor
+  // cue: prop skeletons of "previous rescuers" with price stickers still on.
+  // RICHNESS (the old flattest act in the game): a proper descent-and-climb
+  // CRYPT profile — the lane dives into the burial basin (floor 30), climbs
+  // to the ossuary catwalk at 22, and finishes over the pyramid (peak 18).
   // -------------------------------------------------------------------------
   {
     id: 'w2a4',
@@ -389,36 +481,33 @@ export const world2: LevelDef[] = [
       b.start(2, 25);
       c = crumbleSpikes(b, c.endX, c.endRow, { len: 4 }); // -> 18 (the gimmick, taught safe)
       c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'stamp' }); // -> 26 (+1)
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 }); // -> 32 (easy bar 1)
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 }); // -> 32 (easy bar)
       c = crumbleSpikes(b, c.endX, c.endRow, { len: 6, coins: true }); // -> 42 (+6)
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['pollster', 'lobbyist'] }); // -> 53
       c = goldbarVault(b, c.endX, c.endRow, { index: 1 }); // -> 58 (hidden bar 1)
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 68 (+6)
-      c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 78
-      c = checkpointRest(b, c.endX, c.endRow); // -> 84 (+3, checkpoint @ 80)
-      c = crumbleSpikes(b, c.endX, c.endRow, { len: 8, coins: true }); // -> 96 (+8)
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 107
-      c = runway(b, c.endX, c.endRow, { len: 12, coinRow: 22, rings: true }); // -> 119 (+16)
-      c = skyLadder(b, c.endX, c.endRow, { index: 2 }); // -> 127 (hidden bar 2, high)
-      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 132
-      c = crumbleSpikes(b, c.endX, c.endRow, { len: 6 }); // -> 142
-      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 147
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'chipstack', 'rat'] }); // -> 162
-      c = goldbarVault(b, c.endX, c.endRow, { index: 3 }); // -> 167 (hidden bar 3)
-      // pocket BEFORE perch: the ceremony runway (flagpole at goal-8 = col
-      // 174 to the door) must be flat — a pocket slot there swallowed the
-      // post-pole walk. The perch's flat ground now carries the pole, and
-      // its platform doubles as the max-height-grab springboard.
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 172
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 178 (easy bar 2)
-      finishTo(b, c.endX, c.endRow, 190); // coins total: 48
+      c = basin(b, c.endX, c.endRow, { len: 14, coins: true }); // -> 80 (+12, THE BURIAL BASIN, floor 30)
+      c = checkpointRest(b, c.endX, c.endRow); // -> 86 (+3, checkpoint @ 82)
+      c = crumbleSpikes(b, c.endX, c.endRow, { len: 8, coins: true }); // -> 98 (+8)
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 109 (gavel @ 105)
+      c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: 1 }); // -> 113, row 22
+      c = catwalk(b, c.endX, c.endRow, { len: 14, coins: true, goldbar: 2 }); // -> 127 (+10, THE OSSUARY)
+      c = skyLadder(b, c.endX, c.endRow, { index: 3 }); // -> 135 (hidden bar 3, high)
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 140
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'chipstack'] }); // -> 151 (chip @ 147)
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 156
+      c = goldbarVault(b, c.endX, c.endRow, { index: 4 }); // -> 161 (hidden bar 4)
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 166
+      finishTo(b, c.endX, c.endRow, 190); // pyramid @ 168-173 (peak 18), pole @ 174, door @ 182
     },
   },
 
   // -------------------------------------------------------------------------
   // w2a5 — the leaky stretch: crumble bridges over true voids, prop pipes
   // everywhere (decor cue: drips, duct tape, buckets), a springboard up to a
-  // dry mezzanine and back down. Lawyers only far from the start.
+  // dry mezzanine and back down. Lawyers only far from the start. RICHNESS:
+  // the mezzanine is now a full service deck — catwalk grate, goldpen
+  // gallery, rat+gavel gauntlet — and the descent lands in a drainage basin
+  // before the second void bridge (profile 20 high to 30 deep).
   // -------------------------------------------------------------------------
   {
     id: 'w2a5',
@@ -432,45 +521,45 @@ export const world2: LevelDef[] = [
       let c = runway(b, 0, 25, { len: 11, coinRow: 21, rings: true }); // -> 11 (15 coins)
       b.start(2, 24);
       c = crumbleBridge(b, c.endX, c.endRow, { len: 4 }); // -> 19 (over the void)
-      c = pipeField(b, c.endX, c.endRow, { pipes: 3 }); // -> 35 (no lawyer this close)
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 46
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 56 (+6)
-      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 61
-      c = springboardWall(b, c.endX, c.endRow, { wallH: 5 }); // -> 68, row 20 (the mezzanine)
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 }); // -> 74
-      c = checkpointRest(b, c.endX, c.endRow); // -> 80 (+3, checkpoint @ 76)
-      c = crumbleSpikes(b, c.endX, c.endRow, { len: 6, coins: true }); // -> 90 (+6)
-      c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'goldpen' }); // -> 100 (+2)
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 111
-      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 116
-      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // -> 122, row 26
-      c = runway(b, c.endX, c.endRow, { len: 12, coinRow: 22, rings: true }); // -> 134 (+16)
-      c = skyLadder(b, c.endX, c.endRow, { index: 1 }); // -> 142
-      c = crumbleBridge(b, c.endX, c.endRow, { len: 6 }); // -> 152 (longer void bridge)
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 }); // -> 158
-      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // -> 169 (lawyer @ 160)
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 174
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 180
-      c = skyLadder(b, c.endX, c.endRow, { index: 4 }); // -> 188
-      finishTo(b, c.endX, c.endRow, 200); // coins total: 48
+      c = pipeField(b, c.endX, c.endRow, { pipes: 2 }); // -> 30 (no lawyer this close)
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 41
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 46
+      c = springboardWall(b, c.endX, c.endRow, { wallH: 5 }); // -> 53, row 20 (the mezzanine)
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 0 }); // -> 59
+      c = checkpointRest(b, c.endX, c.endRow); // -> 65 (+3, checkpoint @ 61)
+      c = catwalk(b, c.endX, c.endRow, { len: 16, coins: true, goldbar: 1 }); // -> 81 (+12, the service deck)
+      c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'goldpen' }); // -> 91 (+2)
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 102 (gavel @ 98)
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // -> 108, row 26
+      c = basin(b, c.endX, c.endRow, { len: 17, coins: true, goldbar: 2 }); // -> 133 (+15, floor 30)
+      c = crumbleBridge(b, c.endX, c.endRow, { len: 6 }); // -> 143 (longer void bridge)
+      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // -> 154 (lawyer @ 146)
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 159
+      c = goldbarVault(b, c.endX, c.endRow, { index: 3 }); // -> 164
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 169
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 175
+      finishTo(b, c.endX, c.endRow, 200); // pyramid @ 178-183 (peak 22), pole @ 184, door @ 192
       // THE SERVICE BYPASS (honest shortcut): a maintenance pipe on the
-      // mezzanine checkpoint ledge (cols 74-75) dives under the whole
-      // crumble-spike / goldpen-gallery / rat+gavel stretch and surfaces
-      // flush just past the gavel (cols 109-110). Explorers skip the
-      // gauntlet — and forgo its coins and the goldpen. Laid after the
-      // chain so nothing overwrites the mouths (rule 7).
-      b.warpPipe(74, 18, 2, 109, 20, 2);
+      // mezzanine service deck (cols 67-68, under the catwalk grate) dives
+      // under the whole goldpen-gallery / rat+gavel / basin stretch and
+      // surfaces flush on the second void bridge's left shoulder (cols
+      // 133-134). Explorers skip the gauntlet — and forgo its coins, the
+      // goldpen and the basin bar. Laid after the chain so nothing
+      // overwrites the mouths (rule 7).
+      b.warpPipe(67, 18, 2, 133, 26, 2);
     },
   },
 
   // -------------------------------------------------------------------------
   // w2a6 — OPTIONAL spur. The detour passes the REAL Peach's dungeon door.
-  // DECOR AGENT NOTE — THE CORRIDOR (columns 80..106, surface row 28): this
+  // DECOR AGENT NOTE — THE CORRIDOR (columns 74..97, surface row 28): this
   // stretch is the sincere beat. Draw the real dungeon door in the background
-  // around columns 90..96 — real stone, no prop sticks, no labels, no jokes.
+  // around columns 82..88 — real stone, no prop sticks, no labels, no jokes.
   // The corridor itself is deliberately quiet: no enemies, no hazards, one
   // low unbroken line of coins leading past the door. Comedy resumes after.
-  // Harder-but-richer bookends: 2 goldbars easy, 3 hidden (sky/vault/sky).
+  // RICHNESS: the comedy bookends carry the relief — an inspection catwalk
+  // before the corridor, the coin-roll chipstacks' basin after (chipstack
+  // debuts vs w2a5), and the pyramid finale.
   // -------------------------------------------------------------------------
   {
     id: 'w2a6',
@@ -481,39 +570,39 @@ export const world2: LevelDef[] = [
     theme: 'sewer',
     width: 186,
     build(b) {
-      let c = runway(b, 0, 26, { len: 10, coinRow: 22, rings: true }); // -> 10 (11 coins)
+      let c = runway(b, 0, 26, { len: 8, coinRow: 22, rings: true }); // -> 8 (9 coins)
       b.start(2, 25);
-      c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'stamp' }); // -> 18 (+1)
-      c = spikePit(b, c.endX, c.endRow, { gap: 3 }); // -> 27
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 38
-      c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 46 (hidden bar 1)
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 56 (+6)
-      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 61
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 72
-      c = checkpointRest(b, c.endX, c.endRow); // -> 78 (+3, checkpoint @ 74)
-      c = steppes(b, c.endX, c.endRow, { count: 1, stepH: 2, treadW: 2, dir: -1 }); // -> 80, row 28
-      c = runway(b, c.endX, c.endRow, { len: 26, coinRow: 25 }); // -> 106 (+24) THE CORRIDOR
-      c = steppes(b, c.endX, c.endRow, { count: 1, stepH: 2, treadW: 2, dir: 1 }); // -> 108, row 26
-      c = goldbarVault(b, c.endX, c.endRow, { index: 1 }); // -> 113 (hidden bar 2)
-      c = crumbleBridge(b, c.endX, c.endRow, { len: 5 }); // -> 122
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'pollster'] }); // -> 133
-      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 138
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 }); // -> 144 (easy bar 1)
-      c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 154
-      c = skyLadder(b, c.endX, c.endRow, { index: 3 }); // -> 162 (hidden bar 3)
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 167
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 173 (easy bar 2)
-      finishTo(b, c.endX, c.endRow, 186); // coins total: 45
+      c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'stamp' }); // -> 16 (+1)
+      c = spikePit(b, c.endX, c.endRow, { gap: 3 }); // -> 25
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 36
+      c = catwalk(b, c.endX, c.endRow, { len: 14, coins: true, goldbar: 0 }); // -> 50 (+10, hidden bar 1)
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 55
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 66 (gavel @ 62)
+      c = checkpointRest(b, c.endX, c.endRow); // -> 72 (+3, checkpoint @ 68)
+      c = steppes(b, c.endX, c.endRow, { count: 1, stepH: 2, treadW: 2, dir: -1 }); // -> 74, row 28
+      c = runway(b, c.endX, c.endRow, { len: 24, coinRow: 25 }); // -> 98 (+22) THE CORRIDOR
+      c = steppes(b, c.endX, c.endRow, { count: 1, stepH: 2, treadW: 2, dir: 1 }); // -> 100, row 26
+      c = goldbarVault(b, c.endX, c.endRow, { index: 1 }); // -> 105 (hidden bar 2)
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 111 (easy bar 1)
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'chipstack'] }); // -> 122 (chip @ 118, THE DEBUT)
+      c = basin(b, c.endX, c.endRow, { len: 14, coins: true, goldbar: 2 }); // -> 144 (+12, floor 30)
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 149
+      c = skyLadder(b, c.endX, c.endRow, { index: 4 }); // -> 157 (hidden bar 3)
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 162
+      finishTo(b, c.endX, c.endRow, 186); // pyramid @ 164-169 (peak 22), pole @ 170, door @ 178
     },
   },
 
   // -------------------------------------------------------------------------
-  // w2a7 — the trunk line: three pipe fields crawling with lawyer plants,
+  // w2a7 — the trunk line: two pipe fields crawling with lawyer plants,
   // goldbars sitting brazenly on pipe mouths, the surveillance drone
-  // ("TOTALLY A BIRD"), and the world's widest spike pits. Hard. NEW: THE
-  // MONEY VAULT — goldbar 4 moved off its perch into a coin-stuffed room
-  // under the final stretch; a flush drain grate (cols 180-181) drops you
-  // in, the same shaft (cols 190-191) climbs back out before the door.
+  // ("TOTALLY A BIRD"), and the world's widest spike pits. Hard. THE MONEY
+  // VAULT — goldbar 4 in a coin-stuffed room under the finale; a flush drain
+  // grate right at the pyramid's feet (cols 176-177, because of course the
+  // drain is there) drops you in, a shaft (cols 188-189) climbs back out on
+  // the pole-to-door runway. RICHNESS: the lane climbs to the trunk-line
+  // TOP CATWALK (row 19 under a grate) and dives into the settling basin
+  // (floor 29) — profile 19..29 plus the pyramid.
   // -------------------------------------------------------------------------
   {
     id: 'w2a7',
@@ -528,52 +617,48 @@ export const world2: LevelDef[] = [
       b.start(2, 24);
       c = gapJump(b, c.endX, c.endRow, { gap: 4 }); // -> 20
       c = brickGallery(b, c.endX, c.endRow, { len: 8, powerup: 'stamp' }); // -> 28 (+1)
-      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true }); // -> 44 (lawyer @ 30)
+      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true }); // -> 44 (lawyer @ 31)
       b.goldbar(0, 40, 22); // sitting on the third pipe's mouth — jump from its top
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['pollster', 'lobbyist'] }); // -> 55
       c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 65
-      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true }); // -> 81 (lawyer @ 67)
-      b.coinRow(77, 79, 21); // skim floating over the third pipe (+3)
-      c = checkpointRest(b, c.endX, c.endRow); // -> 87 (+3, checkpoint @ 83)
-      c = coinArc(b, c.endX, c.endRow, { gap: 5 }); // -> 98 (+7)
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'paparazzo', 'rat'] }); // -> 113
-      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 118
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // -> 124
-      c = runway(b, c.endX, c.endRow, { len: 14, coinRow: 21, rings: true }); // -> 138 (+18)
-      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true }); // -> 154 (lawyer @ 140)
-      b.goldbar(3, 150, 22); // on the third pipe's mouth again — they stopped hiding it
-      c = skyLadder(b, c.endX, c.endRow, { index: 2 }); // -> 162
-      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 167
-      c = spikePit(b, c.endX, c.endRow, { gap: 5 }); // -> 178
-      // pocket BEFORE the antechamber: the ceremony runway (flagpole at
-      // goal-8 = col 184 to the door) must be flat — the pocket's slot
-      // there swallowed the post-pole walk.
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 183
-      b.ground(c.endX, c.endX + 5, c.endRow); // vault antechamber (bar 4's old perch spot)
-      c = { endX: c.endX + 6, endRow: c.endRow }; // -> 189
-      finishTo(b, c.endX, c.endRow, 200); // coins total: 43 + 13 vault
-      // THE MONEY VAULT: flush drain grate at cols 184-185 (press down —
-      // right at the flagpole's feet, because of course the drain is there)
-      // into the room under the final stretch — goldbar 4 waits at the far
-      // end behind the coin hoard; the return shaft at cols 190-191 surfaces
-      // two tiles before the goal door. Laid after the chain (rule 7).
-      b.room(184, 196, 29, 32); // vault: floor row 33
-      b.warpPipe(184, 25, 2, 186, 31, 2); // drain grate -> vault floor
-      b.warpPipe(190, 31, 2, 190, 25, 2); // the same shaft back up
-      b.coinRow(188, 189, 31); // the hoard around the shaft
-      b.coinRow(188, 189, 32);
-      b.coinRow(192, 196, 31);
-      b.coinRow(192, 195, 32);
-      b.goldbar(4, 196, 32); // the take, vaulted where they think it is safe
+      c = checkpointRest(b, c.endX, c.endRow); // -> 71 (+3, checkpoint @ 67)
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: 1 }); // -> 77, row 19
+      c = catwalk(b, c.endX, c.endRow, { len: 16, coins: true, goldbar: 1 }); // -> 93 (+12, THE TOP CATWALK)
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // -> 99, row 25
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'paparazzo'] }); // -> 110 (drone @ 106)
+      c = coinArc(b, c.endX, c.endRow, { gap: 5 }); // -> 121 (+7)
+      c = pipeField(b, c.endX, c.endRow, { pipes: 3, lawyer: true }); // -> 137 (lawyer @ 124)
+      b.goldbar(2, 133, 22); // on the third pipe's mouth again — they stopped hiding it
+      c = basin(b, c.endX, c.endRow, { len: 16, coins: true, goldbar: 3 }); // -> 161 (+14, THE SETTLING BASIN)
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 166
+      c = alcovePocket(b, c.endX, c.endRow, { index: 1 }); // -> 171
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 176
+      finishTo(b, c.endX, c.endRow, 200); // pyramid @ 178-183 (peak 21), pole @ 184, door @ 192
+      // THE MONEY VAULT: flush drain grate at cols 176-177 (press down —
+      // right at the pyramid's feet, because of course the drain is there)
+      // into the room under the finale — goldbar 4 waits at the far end
+      // behind the coin hoard; the shaft at cols 188-189 surfaces flush on
+      // the pole-to-door runway. Laid after the chain (rule 7).
+      b.room(180, 196, 29, 32); // vault: floor row 33
+      b.warpPipe(176, 25, 2, 182, 31, 2); // drain grate -> vault floor
+      b.warpPipe(188, 31, 2, 188, 25, 2); // the same shaft back up
+      b.coinRow(184, 187, 31); // the hoard between the shafts
+      b.coinRow(184, 187, 32);
+      b.coinRow(192, 195, 31);
+      b.coinRow(192, 194, 32);
+      b.goldbar(4, 195, 32); // the take, vaulted where they think it is safe
     },
   },
 
   // -------------------------------------------------------------------------
   // w2a8 — CASTLE. The drainage donjon under Impeach's office: one last
   // gauntlet of everything W2 taught (spike pit, crumble deck, lawyer pipe,
-  // rat + gavel), a checkpoint breather, a goldbar victory lap, then the
-  // staged Bowsonaro show in a gated arena. He "escapes"; the excuse blames
-  // the locks. Cutscene w2-end advances Mangiani's suspicion.
+  // rat + gavel, the ridge catwalk, the drainage basin), a checkpoint
+  // breather, a goldbar victory lap, then the staged Bowsonaro show in a
+  // gated arena. He "escapes"; the excuse blames the locks. Cutscene w2-end
+  // advances Mangiani's suspicion. (Castle: door-only ceremony — no pole, no
+  // pyramid; rules 11/12 still judge the pre-arena body, hence the ridge and
+  // the basin.)
   // -------------------------------------------------------------------------
   {
     id: 'w2a8',
@@ -582,7 +667,7 @@ export const world2: LevelDef[] = [
     title: 'Drainage Donjon',
     excuse: 'I shouted the override word — covfefe — but Bowsonaro changed the locks. "E daí?", he said. E daí indeed.',
     theme: 'sewer',
-    width: 185,
+    width: 200,
     boss: true,
     cutsceneAfter: 'w2-end',
     build(b) {
@@ -591,28 +676,29 @@ export const world2: LevelDef[] = [
       c = brickGallery(b, c.endX, c.endRow, { len: 10, powerup: 'stamp' }); // -> 20 (+2)
       c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 30
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster'] }); // -> 41
-      c = crumbleSpikes(b, c.endX, c.endRow, { len: 6, coins: true }); // -> 51 (+6)
-      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // -> 62 (lawyer @ 53)
-      c = runway(b, c.endX, c.endRow, { len: 3 }); // -> 65 (sprint runway: 8 flat tiles before the lip)
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 75 (+6, void gap 68-71)
+      c = crumbleSpikes(b, c.endX, c.endRow, { len: 4, coins: true }); // -> 49 (+4)
+      c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // -> 60 (lawyer @ 52)
+      c = runway(b, c.endX, c.endRow, { len: 3 }); // -> 63 (sprint runway: 8 flat tiles before the lip)
+      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 73 (+6, void gap 66-69)
       b.enemy('gavel', c.endX - 2, c.endRow - 4); // 2026-08 difficulty wave:
-      // the DOCKET STAMP hangs over the void-gap landing (col 73) — time the
+      // the DOCKET STAMP hangs over the void-gap landing (col 71) — time the
       // jump AND the slam. Contact is a hurt (Certified shrinks, small pays
       // full price); the 45-frame pause + slow rise after each slam is the
-      // generous window through. 73 tiles from the start (> 27, idle-silent)
+      // generous window through. 69 tiles from the start (> 27, idle-silent)
       // and the act's checkpoint sits AFTER it, so respawns never re-face it.
-      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 86
-      c = checkpointRest(b, c.endX, c.endRow); // -> 92 (+3, checkpoint @ 88)
-      c = runway(b, c.endX, c.endRow, { len: 12, coinRow: 22, rings: true }); // -> 104 (+16)
-      c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 112
-      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 117
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 }); // -> 123
-      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 128
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 2 }); // -> 134
-      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 139
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 145
-      c = skyLadder(b, c.endX, c.endRow, { index: 4 }); // -> 153
-      arenaApproach(b, c.endX, c.endRow, { width: 26 }); // arena 159..184, goal @ 180, endX 185
+      c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 84 (rat @ 76)
+      c = checkpointRest(b, c.endX, c.endRow); // -> 90 (+3, checkpoint @ 86)
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: 1 }); // -> 96, row 20
+      c = catwalk(b, c.endX, c.endRow, { len: 14, coins: true, goldbar: 0 }); // -> 110 (+10, the donjon rampart)
+      c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // -> 116, row 26
+      c = basin(b, c.endX, c.endRow, { len: 15, coins: true, goldbar: 1 }); // -> 139 (+13, the moat basin)
+      c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 144
+      c = goldbarVault(b, c.endX, c.endRow, { index: 2 }); // -> 149
+      c = secretPocket(b, c.endX, c.endRow, { index: 1 }); // -> 154
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 3 }); // -> 160
+      c = secretPocket(b, c.endX, c.endRow, { index: 2 }); // -> 165
+      c = goldbarPerch(b, c.endX, c.endRow, { index: 4 }); // -> 171
+      arenaApproach(b, c.endX, c.endRow, { width: 23 }); // arena 177..199, goal @ 195, endX 200
     },
   },
 ];

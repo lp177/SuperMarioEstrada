@@ -495,9 +495,14 @@ export class Level implements LevelLike {
       this.activeWarp === null &&
       bossResolved
     ) {
+      // Castle acts have NO flagpole — the boss is the climax (boss OR flag,
+      // never both; playtest-settled). The trigger there is the door itself,
+      // and the ceremony starts directly in its walk phase.
+      const triggerX = this.def.boss ? this.goalX - DOOR_INSET_PX : this.poleX;
       for (const p of this.players) {
-        if (this.isActive(p) && p.x >= this.poleX) {
-          this.startCeremony(p);
+        if (this.isActive(p) && p.x >= triggerX) {
+          if (this.def.boss) this.startDoorCeremony();
+          else this.startCeremony(p);
           break;
         }
       }
@@ -689,6 +694,14 @@ export class Level implements LevelLike {
     if (h >= GOAL.topGrabFrac) this.emitAt('certify', poleX, rider.y);
     this.emitAt('pole-slide', poleX, rider.y);
     this.ceremonyState = { phase: 'pole', rider, plantT: 0, inside: new Set() };
+  }
+
+  /** Castle-act ceremony: no pole, no height bonus — the beaten (or fled)
+   *  boss IS the climax. Everyone just walks through the opened door. */
+  private startDoorCeremony(): void {
+    const leader = this.players.find((p) => this.isActive(p)) ?? this.player;
+    this.emitAt('goal', this.goalX, leader.y);
+    this.ceremonyState = { phase: 'walk', rider: leader, plantT: 0, inside: new Set() };
   }
 
   /** One ceremony frame. The rider slides down the pole (manual, collision-

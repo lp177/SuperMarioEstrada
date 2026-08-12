@@ -1415,7 +1415,7 @@ export function drawToken(
   ctx.beginPath();
   ctx.arc(0, -18.5, 2.2, 0, Math.PI * 2);
   ctx.fill();
-  artText(ctx, 'M', 0, -18.2, 4, '#1f6f30');
+  artText(ctx, 'L', 0, -18.2, 4, '#1f6f30'); // L = Lorenzo Mangiani (M read as Mario's)
   ctx.restore();
 }
 

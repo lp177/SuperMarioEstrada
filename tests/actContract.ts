@@ -48,16 +48,54 @@
 //                        that reaches the map's bottom row (the classical
 //                        pit-sealing pool). A hazard tile floating with no
 //                        such anchor fails with act + coords.
+//  11. RELIEF          — playtest rule (2026-08): "no significant relief".
+//                        The mandatory lane must span >= 8 rows of height
+//                        somewhere across the act AND change height in
+//                        >= 2-row steps at least 6 times. Flat left-to-right
+//                        corridors fail. Finale zone / boss arena exempt.
+//  12. ALTERNATE ROUTE — playtest rule (2026-08): "no alternative path".
+//                        >= 18% of the route's columns must offer two
+//                        DISJOINT reachable standable lanes >= 4 rows apart,
+//                        including at least one run of >= 12 contiguous
+//                        dual-lane columns (a real parallel path, not
+//                        scattered ledges). Warp-served rooms count — the
+//                        reachability fill traverses warps.
+//  13. ENEMY IDENTITY  — playtest rule (2026-08): "always same ennemies".
+//                        >= 3 distinct enemy kinds per act; consecutive acts
+//                        within a world must not repeat an identical kind
+//                        roster and must each place at least one kind their
+//                        immediate predecessor did not. Castle acts are
+//                        exempt from the cross-act clauses, not from >= 3.
+//  14. THE TOP IS EARNABLE — playtest rule (2026-08): "just necessite basic
+//                        jump on going go straight". Non-boss acts must
+//                        offer a reachable launch structure within 8 tiles
+//                        LEFT of the flagpole from which the run-jump arc
+//                        (jump math only — springs do not count) grabs
+//                        >= GOAL.topGrabFrac (the certified top). The
+//                        classic pre-pole staircase satisfies this; a flat
+//                        finale fails. Castle acts have NO pole (the door
+//                        is the whole ceremony, level.ts def.boss branch) —
+//                        exempt.
 //
 // When a rule fails an act, the rule is working: fix the content, not the
 // threshold (AGENTS.md, design rule 7). Rules 8 and 9 are EXPECTED to fail
 // acts authored before the playtest (safe floored pits were the house
-// pattern); that failure list is the work order for the world re-tune wave.
+// pattern); rules 11, 12 and 14 are EXPECTED to fail MOST acts authored
+// before the 2026-08 level-design indictment — those failure lists are the
+// work order for the 4-agent world-rebuild wave, not thresholds to soften.
+//
+// SCOPE OF RULES 11-14: checkAct runs them for CAMPAIGN acts (defs that are
+// members of LEVELS). The minimal rule-0-10 fixtures (acts.test.ts tinyAct,
+// pitRules.test.ts pitAct) stay minimal by design and are not retrofitted;
+// richness fixtures exercise the rules directly via checkActRichness /
+// auditRichness (tests/richness.test.ts). World agents: auditRichness(def)
+// returns every measurement the rules judge — use it while re-tuning.
 // ============================================================================
 
 import type {
   BuiltLevel,
   CutsceneId,
+  EnemyKind,
   InputState,
   LevelDef,
   SpawnPoint,
@@ -68,6 +106,7 @@ import type {
 import {
   ACT_RULES,
   BACKTRACK_SLACK,
+  GOAL,
   PHYS,
   SOLIDITY,
   TILE,
@@ -75,24 +114,35 @@ import {
 import { buildLevel } from '../src/game/levelBuilder.ts';
 import { Level } from '../src/game/level.ts';
 import { CASTLES } from '../src/levels/maps.ts';
+import { LEVELS } from '../src/levels/index.ts';
 
 // ---------------------------------------------------------------------------
-// Flow-bot tuning. Grounded in measured player physics (fixed 60 Hz):
-// full-hold jump rises ~8 tiles; a sprint gap-jump with a 12-frame hold
-// (jump-cut clamps the rest) carries ~9 tiles. Authored acts keep mandatory
-// steps <= 3 up and gaps <= 5 across, so these are generous.
+// Flow-bot tuning. Grounded in measured player physics (fixed 60 Hz) and
+// DERIVED from PHYS wherever speed matters, so retunes shift the reflexes
+// automatically. At the current tune a full-hold standstill jump rises ~8
+// tiles; a full-sprint arc carries PHYS.runMax px per airborne frame.
 //
-// SPEED-PROPORTIONAL REFLEXES (the runMax 2.9 -> 3.8 retune taught this):
+// SPEED-PROPORTIONAL REFLEXES (runMax 2.9 -> 3.8 -> 4.4 taught this TWICE):
 //   - wall probes are GEOMETRIC (tile-quantized): jumping ~2 tiles before a
 //     wall works at any approach speed, because rise is time-based,
 //   - the gap probe must see a lip at least ~2.75 frames of travel out at
 //     full sprint, or the bot can step past the lip between frames — it is
 //     derived from PHYS.runMax so physics retunes shift it automatically,
-//   - the bot WALKS by default and SPRINTS only to launch gap jumps (plus
-//     boss chases). Holding run everywhere made every wall-jump drift ~21
-//     tiles at 3.8 px/frame and the bot overflew its landing runways into
-//     the next pit; walking bounds the uncontrolled drift while gap jumps
-//     still take off at full speed (spin-up starts ~40px before the lip).
+//   - the bot sprints only to launch gap jumps (plus boss chases) — BUT
+//     ground speed never decays below a carried sprint while holding right
+//     (player.ts's no-clamp rule protects spring momentum), so by mid-act
+//     the bot runs at runMax everywhere anyway,
+//   - MEASURED HOLDS (the 3.8 -> 4.4 retune's lesson): therefore a FIXED
+//     jump hold is a lie at any other speed. At 4.4 px/frame the old fixed
+//     12-frame gap hold carried ~10.5 tiles (overflying 3-tile landings into
+//     the NEXT void) and the old fixed 40-frame wall hold flew ~18 tiles (a
+//     2-tall pipe launched w2a1/w2a2's bot clean over their runways into the
+//     void — the two speed-bump casualties). The bot now MEASURES the
+//     obstacle — gap width in columns, wall height in rows — and picks the
+//     smallest hold whose simulated arc (HOLD_LADDER, player-physics-exact)
+//     clears it with margin, exactly like a player scaling the press to what
+//     is in front of them. Gap arcs land 1-3 tiles past the far lip instead
+//     of a fixed 10; wall hops crest 1 tile over the wall instead of 8.
 // ---------------------------------------------------------------------------
 const BOT = {
   /** Wall probe distances ahead of the leading face (px): "1-2 tiles ahead"
@@ -103,11 +153,23 @@ const BOT = {
   /** Extra distance ahead of the gap probe at which the bot starts
    *  sprinting, so gap jumps launch at full runMax (~14 frames of spin-up). */
   sprintSpinupPx: 40,
-  /** Hold jump this long at walls / when stuck (full height, ~8 tiles). */
+  /** Fallback/cap hold (full height, ~8 tiles): unstick jumps, boss-bounce
+   *  jumps, and walls too tall to measure a clearing arc for. */
   wallHoldFrames: 40,
-  /** Hold jump this long at gap lips: with the jump-cut on release this
-   *  yields a ~5-tile-high, ~9-tile-carry sprint arc — clears 5-gaps. */
-  gapHoldFrames: 12,
+  /** Gap jumps never hold longer than this (~10.5-tile carry at runMax): a
+   *  lane void wider than that is content to fail, not reflex to save. */
+  gapMaxHoldFrames: 12,
+  /** Gap measurement: probe up to this many columns for the far lip. */
+  gapMeasureMaxTiles: 8,
+  /** Landing foothold: carry must put the center this far past the far lip
+   *  (the feet sensor half-spread is 5px). */
+  gapFootholdPx: 5,
+  /** Extra carry margin over the measured requirement. */
+  gapCarryMarginPx: 10,
+  /** Gap arcs must also rise enough to take a <= 2-row far-side step. */
+  gapMinRisePx: 2 * TILE + 8,
+  /** Wall arcs must clear the measured wall top by this much. */
+  wallClearMarginPx: 12,
   /** Frames of pushing right with no advance before an unstick jump. */
   unstickAfterFrames: 30,
   /** Boss engagement distance (px): start bounce attempts inside this. */
@@ -130,6 +192,54 @@ const BOT = {
   /** Collectibles may sit at most this far left of the start (px). */
   startSlackPx: 32,
 } as const;
+
+// ---------------------------------------------------------------------------
+// HOLD_LADDER — simulated jump arcs for hold lengths 1..wallHoldFrames,
+// mirroring player.ts exactly (gravity before displacement, gravHold while
+// rising with jump held, jump-CUT clamp on release). Pure function of PHYS:
+// physics retunes re-derive the whole ladder at import time.
+//   sprintCarryPx — horizontal travel of a full-sprint arc (runMax, with the
+//                   run-jump bonus) from launch back to launch height,
+//   sprintRisePx  — apex of that same arc,
+//   standRisePx   — apex of a STANDSTILL arc (no bonus) — the conservative
+//                   floor for wall jumps, which may launch at any speed.
+// ---------------------------------------------------------------------------
+interface HoldArc {
+  hold: number;
+  /** Airborne frames of the sprint arc (launch to touchdown at launch height). */
+  airFrames: number;
+  sprintCarryPx: number;
+  sprintRisePx: number;
+  standRisePx: number;
+}
+
+function simJumpArc(holdFrames: number, runBonus: boolean): { risePx: number; airFrames: number } {
+  let vy = PHYS.jump + (runBonus ? PHYS.jumpRunBonus : 0);
+  let y = 0;
+  let rise = 0;
+  for (let f = 1; f <= 400; f++) {
+    const held = f <= holdFrames;
+    if (!held && vy < -PHYS.jumpCut) vy = -PHYS.jumpCut;
+    vy = Math.min(vy + (vy < 0 && held ? PHYS.gravHold : PHYS.grav), PHYS.maxFall);
+    y += vy;
+    if (-y > rise) rise = -y;
+    if (y >= 0 && vy > 0) return { risePx: rise, airFrames: f };
+  }
+  return { risePx: rise, airFrames: 400 };
+}
+
+const HOLD_LADDER: readonly HoldArc[] = Array.from({ length: BOT.wallHoldFrames }, (_, i) => {
+  const hold = i + 1;
+  const sprint = simJumpArc(hold, true);
+  const stand = simJumpArc(hold, false);
+  return {
+    hold,
+    airFrames: sprint.airFrames,
+    sprintCarryPx: sprint.airFrames * PHYS.runMax,
+    sprintRisePx: sprint.risePx,
+    standRisePx: stand.risePx,
+  };
+});
 
 /** Expected cutscene after each world's castle act. */
 const CASTLE_CUTSCENE: Record<WorldNo, CutsceneId> = {
@@ -160,11 +270,14 @@ function at(px: number, py: number): string {
 // ---------------------------------------------------------------------------
 // THE FLOW BOT.
 //
-// It ONLY holds right (walking; sprinting for gap launches and boss chases —
-// see the BOT header), and presses jump when:
-//   (a) a solid wall sits 1-2 tiles ahead at body height,
-//   (b) there is no ground within 2 tiles below-ahead (a gap lip),
-//   (c) it has been pushing right without advancing for > 30 frames (unstick).
+// It ONLY holds right (sprinting for gap launches and boss chases — see the
+// BOT header), and presses jump when:
+//   (a) a solid wall sits 1-2 tiles ahead at body height — held just long
+//       enough for the measured wall height (HOLD_LADDER),
+//   (b) there is no ground within 2 tiles below-ahead (a gap lip) — held
+//       just long enough for the measured gap width,
+//   (c) it has been pushing right without advancing for > 30 frames (unstick
+//       — a blind full hold).
 // It is immortal: invulnT is pinned every frame, so contact damage does
 // nothing. Lava and the void still KILL outright (kill() bypasses
 // invulnerability); the checkpoint respawn brings the bot back and it keeps
@@ -172,11 +285,15 @@ function at(px: number, py: number): string {
 // on time or stall, which is the point. The bot NEVER presses down, so it
 // never rides a warp: the mandatory route must work without warps.
 //
-// Boss acts: Level fires the goal ceremony on a plain x >= goalX check, and
-// the goal stands INSIDE the arena, so the bot refuses to cross
-// goalX - bossGoalCapPx while the show is on. It chases the boss instead and
-// periodically jumps when within bossEngagePx, landing crude stomps until the
-// boss escapes (staged) or goes down (rage). Immortality carries it.
+// Boss acts: the ceremony trigger is x-based and the goal stands INSIDE the
+// arena, so the bot refuses to cross goalX - bossGoalCapPx while the show is
+// on. It chases the boss instead and periodically jumps when within
+// bossEngagePx, landing crude stomps until the boss escapes (staged) or goes
+// down (rage). Immortality carries it. CASTLE CEREMONY (2026-08): castle
+// acts have NO flagpole — once the boss resolves, the trigger is the DOOR
+// itself (goalX - 4px, level.ts def.boss branch) and the ceremony starts in
+// its walk phase; the bot just keeps holding right to the doorstep. Non-boss
+// acts trigger at poleX (goalX - 8 tiles) and ride the pole grab + walk.
 //
 // If an act's mandatory route needs anything smarter than this, the act is
 // wrong, not the bot: cleverness is for optional collectibles, never the
@@ -233,6 +350,90 @@ export function flowBot(
     return true;
   };
 
+  /** Wall-jump hold, two measurements:
+   *  1. RISE — the blocking stack's top in the hit column and its right
+   *     neighbor (2-wide pipes/walls read as one obstacle): smallest hold
+   *     whose STANDSTILL rise clears it with margin (the no-bonus arc is the
+   *     conservative floor; launches at speed rise more).
+   *  2. LANDING — a wall hop at carried speed must come DOWN on something:
+   *     project the landing point at the current speed and escalate the hold
+   *     until the landing column offers a standable surface between the wall
+   *     crest and 2 rows below the feet (w3a7's shortcut pipe taught this: a
+   *     minimal hop over the pipe landed in the void beyond it; the sized-up
+   *     hold clears pipe AND void in one measured leap, like a player would).
+   *  Unmeasurable either way: the full blind hold (legacy behavior). */
+  const wallHoldFor = (hitPx: number): number => {
+    const hitCol = Math.floor(hitPx / TILE);
+    const feet = p.y + p.halfH;
+    const feetRow = Math.floor(feet / TILE);
+    const bandTop = Math.floor((p.y - p.halfH + 2) / TILE);
+    let needPx = 0;
+    for (const wx of [hitCol, hitCol + 1]) {
+      const cx = (wx + 0.5) * TILE;
+      let top = -1;
+      for (let ty = bandTop; ty <= feetRow; ty++) {
+        if (map.solidAtPx(cx, (ty + 0.5) * TILE) === 'solid') {
+          top = ty;
+          break;
+        }
+      }
+      if (top === -1) continue;
+      while (top > 0 && map.solidAtPx(cx, (top - 0.5) * TILE) === 'solid') top--;
+      needPx = Math.max(needPx, feet - top * TILE + BOT.wallClearMarginPx);
+    }
+    if (needPx <= 0) return BOT.wallHoldFrames;
+    const base = HOLD_LADDER.findIndex((a) => a.standRisePx >= needPx);
+    if (base === -1) return BOT.wallHoldFrames;
+    // landing-aware escalation at the carried speed: the landing column must
+    // offer a surface between "as high as this hold can rise" and 2 rows
+    // below the feet (deeper is a drop the arc will survive elsewhere)
+    const vxEst = Math.max(Math.abs(p.vx), 1);
+    for (let i = base; i < HOLD_LADDER.length; i++) {
+      const arc = HOLD_LADDER[i]!;
+      const landTx = Math.floor((p.x + arc.airFrames * vxEst) / TILE);
+      const highestRow = feetRow - Math.floor(arc.standRisePx / TILE);
+      if (
+        landTx >= map.wTiles ||
+        columnSurfaces(map, landTx).some((s) => s.row >= highestRow && s.row <= feetRow + 2)
+      ) {
+        return arc.hold;
+      }
+    }
+    return BOT.wallHoldFrames;
+  };
+
+  /** Gap-jump hold: measure the void's width (columns with no standable
+   *  support within 2 tiles below the feet, starting at the column the gap
+   *  probe fired on), then pick the smallest hold whose full-sprint carry
+   *  reaches the far lip with foothold + margin — landing 1-3 tiles past
+   *  the lip instead of overflying the landing runway into the next pit. */
+  const gapHoldNow = (): number => {
+    const feet = p.y + p.halfH;
+    const firstCol = Math.floor((p.x + p.halfW + BOT.gapLookaheadPx) / TILE);
+    let k = 1; // the probe column itself is void — that is what fired
+    while (k < BOT.gapMeasureMaxTiles) {
+      const cx = (firstCol + k + 0.5) * TILE;
+      let support = false;
+      for (const dy of [4, TILE + 4, 2 * TILE + 4]) {
+        const s = map.solidAtPx(cx, feet + dy);
+        if (s === 'solid' || s === 'oneway') {
+          support = true;
+          break;
+        }
+      }
+      if (support) break;
+      k++;
+    }
+    const needPx = (firstCol + k) * TILE + BOT.gapFootholdPx - p.x + BOT.gapCarryMarginPx;
+    const pick = HOLD_LADDER.find(
+      (a) =>
+        a.hold <= BOT.gapMaxHoldFrames &&
+        a.sprintCarryPx >= needPx &&
+        a.sprintRisePx >= BOT.gapMinRisePx,
+    );
+    return pick ? pick.hold : BOT.gapMaxHoldFrames;
+  };
+
   while (frames < maxFrames && !level.finished) {
     p.invulnT = 2; // immortal: cannot dodge, does not need to
     const boss = level.boss;
@@ -268,15 +469,16 @@ export function flowBot(
       }
     } else if (p.grounded && !p.dead) {
       sprintAir = false;
-      // (a) wall 1-2 tiles ahead at body height
-      let wall = false;
+      // (a) wall 1-2 tiles ahead at body height — remember WHERE it hit so
+      // the hold can be sized to the measured wall
+      let wallAtPx = -1;
       for (const d of BOT.wallLookaheadPx) {
         const px = p.x + p.halfW + d;
         if (
           map.solidAtPx(px, p.y) === 'solid' ||
           map.solidAtPx(px, p.y - p.halfH + 2) === 'solid'
         ) {
-          wall = true;
+          wallAtPx = px;
           break;
         }
       }
@@ -285,13 +487,13 @@ export function flowBot(
       // sprint spin-up: see the lip early enough to hit it at full runMax
       run = gapNow || noSupport(BOT.gapLookaheadPx + BOT.sprintSpinupPx);
       // (c) unstick
-      if (wall || blockedT > BOT.unstickAfterFrames) {
+      if (wallAtPx >= 0 || blockedT > BOT.unstickAfterFrames) {
         press = true;
-        holdT = BOT.wallHoldFrames;
+        holdT = wallAtPx >= 0 ? wallHoldFor(wallAtPx) : BOT.wallHoldFrames;
         blockedT = 0;
       } else if (gapNow) {
         press = true;
-        holdT = BOT.gapHoldFrames;
+        holdT = gapHoldNow();
         run = true;
         sprintAir = true;
       }
@@ -695,8 +897,15 @@ function standingTileReached(
 
 // ---------------------------------------------------------------------------
 // checkAct
+//
+// `prevInWorld` feeds rule 13's cross-act clauses (roster diff vs the act's
+// immediate predecessor, same world, act - 1):
+//   - omitted   -> campaign acts (LEVELS members) resolve it automatically;
+//                  fixture defs get none,
+//   - null      -> explicitly no predecessor,
+//   - a LevelDef -> use it (richness fixtures pair acts this way).
 // ---------------------------------------------------------------------------
-export function checkAct(def: LevelDef): void {
+export function checkAct(def: LevelDef, prevInWorld?: LevelDef | null): void {
   const fail = (rule: string, msg: string): never => {
     throw new Error(`${def.id}: ${rule}: ${msg}`);
   };
@@ -745,6 +954,11 @@ export function checkAct(def: LevelDef): void {
   checkGapsCarryRisk(built, fail);
   checkNoTraps(def, built, reached, fail);
   checkHazardsAnchored(built, fail);
+  // Rules 11-14 (richness) gate CAMPAIGN acts here; standalone/fixture defs
+  // exercise them via checkActRichness — see the RICHNESS SCOPE header note.
+  if (LEVELS.includes(def)) {
+    runRichnessRules(def, built, reached, resolvePrevInWorld(def, prevInWorld), fail);
+  }
 }
 
 // -- rule 1: STRUCTURE ------------------------------------------------------
@@ -1283,4 +1497,401 @@ function checkHazardsAnchored(built: BuiltLevel, fail: Fail): void {
       }
     }
   }
+}
+
+// ============================================================================
+// RULES 11-14 — THE RICHNESS RULES (playtest 2026-08, verbatim indictment:
+// "lvl are little and really not vary in terme of gameplay purposed, always
+// same ennemies, just necessite basic jump on going go straight... no
+// significant relief, no alternative path").
+//
+// These are permanent machine-checked design rules, not a one-off audit.
+// MOST acts authored before the indictment are EXPECTED to fail 11/12 (and
+// 14): those failure lists are the work order for the 4-agent world-rebuild
+// wave — fix the content, never the thresholds (design rule 7).
+//
+// World-agent tooling: auditRichness(def) returns every measurement these
+// rules judge (lane range/steps, dual-lane % and best run, kind roster, best
+// pole grab) plus the violation list — run it while sculpting an act.
+// ============================================================================
+export const RICHNESS = {
+  /** Rule 11: the mandatory lane's standable rows must span at least this
+   *  vertical range somewhere across the act (rows, max - min). */
+  reliefMinRangeRows: 8,
+  /** Rule 11: a lane height change counts as a step from this many rows. */
+  reliefStepRows: 2,
+  /** Rule 11: minimum number of such steps across the act. */
+  reliefMinSteps: 6,
+  /** Rule 11: a lane row only counts (for range AND steps) while it PERSISTS
+   *  this many columns — 1-column dips (secret-pocket entrance slots, vault
+   *  wells) are slots, not relief, and must not buy the rule off. */
+  reliefTreadCols: 2,
+  /** Rule 12: fraction of route columns that must offer dual lanes. */
+  dualMinFrac: 0.18,
+  /** Rule 12: vertical separation (rows) that makes two lanes DISJOINT. */
+  dualMinSeparationRows: 4,
+  /** Rule 12: at least one contiguous dual-lane run must be this long. */
+  dualMinRunCols: 12,
+  /** Rule 13: distinct enemy kinds per act. */
+  minEnemyKinds: 3,
+  /** Rule 14: the launch structure must stand within this many tiles LEFT
+   *  of the flagpole (past the pole the ceremony has already triggered). */
+  poleLaunchRadiusTiles: 8,
+} as const;
+
+/** Rule 14's jump arc: the run-jump BALLISTIC apex — the jump impulse plus
+ *  run bonus under plain gravity, simulated in player.ts frame order.
+ *  Deliberately NOT the float-stretched full-hold apex (~8-9.5 rows): the
+ *  ceremony grabs on the FIRST poleX crossing, so converting the full-hold
+ *  apex into grab height means launching ~10 tiles out at sprint and
+ *  crossing the pole plane frame-perfectly at apex — stunt play, not the
+ *  dependable arc the rule prices the pole against. ~3.7 rows at the
+ *  current tune; re-derived from PHYS at import time. */
+export const FULL_JUMP_APEX_PX = (() => {
+  let vy = PHYS.jump + PHYS.jumpRunBonus;
+  let rise = 0;
+  for (let f = 0; f < 400; f++) {
+    vy += PHYS.grav;
+    if (vy >= 0) break;
+    rise += -vy;
+  }
+  return rise;
+})();
+
+/** First column of the act's finale zone — from here rightward is ceremony
+ *  runway (non-boss: the flagpole, GOAL.poleOffsetTiles before the door;
+ *  boss: the arena) and exempt from rules 11/12. */
+function finaleBoundaryCol(def: LevelDef, built: BuiltLevel): number {
+  if (def.boss && built.arena !== null) return Math.floor(built.arena.x0 / TILE);
+  return Math.floor((built.goalX - GOAL.poleOffsetTiles * TILE) / TILE);
+}
+
+/** The rules-11/12 measurement zone: start column to the finale boundary. */
+function richnessZone(def: LevelDef, built: BuiltLevel): { x0: number; x1: number } {
+  const startTx = Math.min(
+    built.map.wTiles - 1,
+    Math.max(0, Math.floor(built.start.x / TILE)),
+  );
+  return { x0: startTx, x1: Math.max(startTx, finaleBoundaryCol(def, built)) - 1 };
+}
+
+// -- rule 11: RELIEF ----------------------------------------------------------
+export interface ReliefMeasure {
+  /** Inclusive column zone measured (start column .. finale boundary - 1). */
+  zone: { x0: number; x1: number };
+  /** Vertical span of the lane's standable rows (max row - min row). */
+  rangeRows: number;
+  /** Highest lane point (smallest row — rows grow downward). */
+  high: { row: number; col: number };
+  /** Lowest lane point. */
+  low: { row: number; col: number };
+  /** Lane height changes of >= reliefStepRows between consecutive lane
+   *  TREADS (runs persisting >= reliefTreadCols columns; voids between the
+   *  treads are skipped — a step across a gap counts, a 1-column pocket
+   *  slot does not). */
+  steps: number;
+}
+
+function measureRelief(def: LevelDef, built: BuiltLevel): ReliefMeasure {
+  const lane = laneScan(built.map, built.start);
+  const zone = richnessZone(def, built);
+  // collapse the lane into maximal same-row floor runs
+  const runs: { row: number; col: number; len: number }[] = [];
+  for (let tx = zone.x0; tx <= zone.x1; tx++) {
+    const c = lane[tx];
+    if (!c || c.kind !== 'floor') {
+      runs.push({ row: NaN, col: tx, len: 0 }); // break marker (void column)
+      continue;
+    }
+    const last = runs[runs.length - 1];
+    if (last !== undefined && last.row === c.row) last.len++;
+    else runs.push({ row: c.row, col: tx, len: 1 });
+  }
+  // treads = runs long enough to stand on as terrain, not slot dips
+  const treads = runs.filter((r) => r.len >= RICHNESS.reliefTreadCols);
+  let high = { row: Infinity, col: -1 };
+  let low = { row: -Infinity, col: -1 };
+  let steps = 0;
+  let prevRow: number | null = null;
+  for (const t of treads) {
+    if (t.row < high.row) high = { row: t.row, col: t.col };
+    if (t.row > low.row) low = { row: t.row, col: t.col };
+    if (prevRow !== null && Math.abs(t.row - prevRow) >= RICHNESS.reliefStepRows) steps++;
+    prevRow = t.row;
+  }
+  const rangeRows = low.row >= high.row ? low.row - high.row : 0;
+  return { zone, rangeRows, high, low, steps };
+}
+
+function checkRelief(def: LevelDef, built: BuiltLevel, fail: Fail): void {
+  const R = 'rule 11 (relief)';
+  const m = measureRelief(def, built);
+  const problems: string[] = [];
+  if (m.rangeRows < RICHNESS.reliefMinRangeRows) {
+    problems.push(
+      `the lane's vertical range is ${m.rangeRows} row(s) (need >= ${RICHNESS.reliefMinRangeRows}) — highest surface row ${m.high.row} at column ${m.high.col}, lowest row ${m.low.row} at column ${m.low.col}`,
+    );
+  }
+  if (m.steps < RICHNESS.reliefMinSteps) {
+    problems.push(
+      `the lane changes height (steps of >= ${RICHNESS.reliefStepRows} rows between treads persisting >= ${RICHNESS.reliefTreadCols} columns — 1-column pocket slots do not count) only ${m.steps} time(s) (need >= ${RICHNESS.reliefMinSteps})`,
+    );
+  }
+  if (problems.length > 0) {
+    fail(
+      R,
+      `${problems.join('; ')} across columns ${m.zone.x0}..${m.zone.x1} — a flat left-to-right corridor is a treadmill: sculpt climbs, ridges and descents (the finale zone from column ${m.zone.x1 + 1} and boss arenas are exempt)`,
+    );
+  }
+}
+
+// -- rule 12: ALTERNATE ROUTE -------------------------------------------------
+export interface DualLaneMeasure {
+  zone: { x0: number; x1: number };
+  zoneCols: number;
+  /** Columns offering >= 2 reachable safe standable surfaces >= 4 rows apart. */
+  dualCols: number;
+  frac: number;
+  bestRun: number;
+  bestRunAt: { x0: number; x1: number } | null;
+}
+
+function measureDualLanes(
+  def: LevelDef,
+  built: BuiltLevel,
+  reached: Uint8Array,
+): DualLaneMeasure {
+  const map = built.map;
+  const w = map.wTiles;
+  const zone = richnessZone(def, built);
+  const zoneCols = Math.max(0, zone.x1 - zone.x0 + 1);
+  let dualCols = 0;
+  let run = 0;
+  let bestRun = 0;
+  let bestEnd = -1;
+  for (let tx = zone.x0; tx <= zone.x1; tx++) {
+    const rows: number[] = [];
+    for (const s of columnSurfaces(map, tx)) {
+      if (s.rest !== 'safe') continue; // spike/lava rests are not lanes
+      if (s.row < 1) continue;
+      if (reached[(s.row - 1) * w + tx] !== 1) continue; // standing tile unreached
+      rows.push(s.row); // columnSurfaces scans top-down: ascending rows
+    }
+    const dual =
+      rows.length >= 2 &&
+      rows[rows.length - 1]! - rows[0]! >= RICHNESS.dualMinSeparationRows;
+    if (dual) {
+      dualCols++;
+      run++;
+      if (run > bestRun) {
+        bestRun = run;
+        bestEnd = tx;
+      }
+    } else {
+      run = 0;
+    }
+  }
+  return {
+    zone,
+    zoneCols,
+    dualCols,
+    frac: zoneCols > 0 ? dualCols / zoneCols : 0,
+    bestRun,
+    bestRunAt: bestRun > 0 ? { x0: bestEnd - bestRun + 1, x1: bestEnd } : null,
+  };
+}
+
+function checkAlternateRoute(
+  def: LevelDef,
+  built: BuiltLevel,
+  reached: Uint8Array,
+  fail: Fail,
+): void {
+  const R = 'rule 12 (alternate route)';
+  const m = measureDualLanes(def, built, reached);
+  if (m.zoneCols === 0) return; // degenerate zone (arena-only act): nothing to measure
+  const problems: string[] = [];
+  if (m.frac < RICHNESS.dualMinFrac) {
+    problems.push(
+      `only ${m.dualCols}/${m.zoneCols} columns (${(m.frac * 100).toFixed(1)}%) offer two reachable standable lanes >= ${RICHNESS.dualMinSeparationRows} rows apart (need >= ${RICHNESS.dualMinFrac * 100}%)`,
+    );
+  }
+  if (m.bestRun < RICHNESS.dualMinRunCols) {
+    problems.push(
+      `the longest contiguous dual-lane stretch is ${m.bestRun} column(s)${m.bestRunAt ? ` (columns ${m.bestRunAt.x0}..${m.bestRunAt.x1})` : ''} (need >= ${RICHNESS.dualMinRunCols} — a real parallel path, not scattered ledges)`,
+    );
+  }
+  if (problems.length > 0) {
+    fail(
+      R,
+      `${problems.join('; ')} across columns ${m.zone.x0}..${m.zone.x1} — the route is single-file: add an upper gallery, a lower duct, or a warp-served parallel room (the fill traverses warps, so warp routes count)`,
+    );
+  }
+}
+
+// -- rule 13: ENEMY IDENTITY --------------------------------------------------
+function checkEnemyIdentity(
+  def: LevelDef,
+  built: BuiltLevel,
+  prev: LevelDef | null,
+  fail: Fail,
+): void {
+  const R = 'rule 13 (enemy identity)';
+  const kinds = new Set<EnemyKind>(built.enemies.map((e) => e.kind));
+  const roster = [...kinds].sort().join(', ');
+  if (kinds.size < RICHNESS.minEnemyKinds) {
+    fail(
+      R,
+      `only ${kinds.size} distinct enemy kind(s) [${roster}] (need >= ${RICHNESS.minEnemyKinds}) — "always same ennemies" is the playtest's core complaint`,
+    );
+  }
+  // Castle acts are exempt from the cross-act clauses (their cast is the
+  // boss show), and act 1 of a world has no predecessor to differ from.
+  if (CASTLES[def.world] === def.id || prev === null) return;
+  const prevKinds = new Set<EnemyKind>(buildLevel(prev).enemies.map((e) => e.kind));
+  if (kinds.size === prevKinds.size && [...kinds].every((k) => prevKinds.has(k))) {
+    fail(
+      R,
+      `enemy roster [${roster}] is IDENTICAL to ${prev.id}'s — consecutive acts within a world must not repeat a roster`,
+    );
+  }
+  if ([...kinds].every((k) => prevKinds.has(k))) {
+    fail(
+      R,
+      `every kind of [${roster}] already walked ${prev.id} — each act must place at least one kind its immediate predecessor did not`,
+    );
+  }
+}
+
+// -- rule 14: THE TOP IS EARNABLE ----------------------------------------------
+export interface TopGrabMeasure {
+  /** Column of the flagpole (GOAL.poleOffsetTiles before the door). */
+  poleCol: number;
+  /** Best grab fraction a run-jump reaches from any reachable launch. */
+  bestFrac: number;
+  best: { col: number; row: number } | null;
+  /** Rows above the goal ground line a launch surface must reach. */
+  neededRows: number;
+}
+
+function measureTopGrab(built: BuiltLevel, reached: Uint8Array): TopGrabMeasure {
+  const map = built.map;
+  const w = map.wTiles;
+  const poleCol = Math.floor((built.goalX - GOAL.poleOffsetTiles * TILE) / TILE);
+  const poleBaseY = (built.goalRow + 1) * TILE; // mirrors Level.poleBaseY
+  const poleHPx = GOAL.poleHeightTiles * TILE;
+  let bestFrac = 0;
+  let best: { col: number; row: number } | null = null;
+  const x0 = Math.max(0, poleCol - RICHNESS.poleLaunchRadiusTiles);
+  const x1 = Math.min(w - 1, poleCol);
+  for (let tx = x0; tx <= x1; tx++) {
+    for (const s of columnSurfaces(map, tx)) {
+      if (s.rest !== 'safe') continue;
+      if (s.row < 1 || reached[(s.row - 1) * w + tx] !== 1) continue;
+      // center at apex of a run-jump from this surface (small body)
+      const apexCenterY = s.row * TILE - PHYS.smallHalf[1] - FULL_JUMP_APEX_PX;
+      const frac = Math.min(1, (poleBaseY - apexCenterY) / poleHPx);
+      if (frac > bestFrac) {
+        bestFrac = frac;
+        best = { col: tx, row: s.row };
+      }
+    }
+  }
+  const neededRows = Math.ceil(
+    (GOAL.topGrabFrac * poleHPx - PHYS.smallHalf[1] - FULL_JUMP_APEX_PX) / TILE,
+  );
+  return { poleCol, bestFrac, best, neededRows };
+}
+
+function checkTopEarnable(
+  def: LevelDef,
+  built: BuiltLevel,
+  reached: Uint8Array,
+  fail: Fail,
+): void {
+  const R = 'rule 14 (the top is earnable)';
+  if (def.boss) return; // castle acts: door-only ceremony, no pole to grab
+  const m = measureTopGrab(built, reached);
+  if (m.bestFrac >= GOAL.topGrabFrac) return;
+  const from =
+    m.best === null
+      ? 'no reachable launch surface exists there at all'
+      : `the best launch (column ${m.best.col}, surface row ${m.best.row}) reaches ${(m.bestFrac * 100).toFixed(0)}%`;
+  fail(
+    R,
+    `a run-jump from within ${RICHNESS.poleLaunchRadiusTiles} tiles left of the pole (column ${m.poleCol}) grabs at most ${(m.bestFrac * 100).toFixed(0)}% of the pole, below the certified ${GOAL.topGrabFrac * 100}% — ${from}: raise a launch structure (stairs/pyramid/platform) to >= ${m.neededRows} rows above the goal line; springs do not count (jump math only), and keep the pole-to-door runway itself flat (ceremony walk contract)`,
+  );
+}
+
+// -- richness plumbing ---------------------------------------------------------
+function resolvePrevInWorld(
+  def: LevelDef,
+  explicit: LevelDef | null | undefined,
+): LevelDef | null {
+  if (explicit !== undefined) return explicit;
+  if (!LEVELS.includes(def)) return null;
+  return LEVELS.find((d) => d.world === def.world && d.act === def.act - 1) ?? null;
+}
+
+function runRichnessRules(
+  def: LevelDef,
+  built: BuiltLevel,
+  reached: Uint8Array,
+  prev: LevelDef | null,
+  fail: Fail,
+): void {
+  checkRelief(def, built, fail);
+  checkAlternateRoute(def, built, reached, fail);
+  checkEnemyIdentity(def, built, prev, fail);
+  checkTopEarnable(def, built, reached, fail);
+}
+
+/** Rules 11-14 standalone (fixtures, in-progress acts not yet in LEVELS).
+ *  Same throw-at-first-violation manners as checkAct. */
+export function checkActRichness(def: LevelDef, prevInWorld?: LevelDef | null): void {
+  const fail: Fail = (rule, msg) => {
+    throw new Error(`${def.id}: ${rule}: ${msg}`);
+  };
+  const built = buildLevel(def);
+  const reached = computeReached(built);
+  runRichnessRules(def, built, reached, resolvePrevInWorld(def, prevInWorld), fail);
+}
+
+/** Everything rules 11-14 measure, plus their violation messages — the
+ *  world-rebuild wave's per-act dashboard. Never throws. */
+export interface RichnessAudit {
+  relief: ReliefMeasure;
+  dual: DualLaneMeasure;
+  kinds: EnemyKind[];
+  /** null on boss acts (door-only ceremony, no pole). */
+  topGrab: TopGrabMeasure | null;
+  /** Rule 11-14 violation messages, rule order. Empty = richness-clean. */
+  violations: string[];
+}
+
+export function auditRichness(def: LevelDef, prevInWorld?: LevelDef | null): RichnessAudit {
+  const built = buildLevel(def);
+  const reached = computeReached(built);
+  const prev = resolvePrevInWorld(def, prevInWorld);
+  const violations: string[] = [];
+  const collect = (run: (fail: Fail) => void): void => {
+    try {
+      run((rule, msg) => {
+        throw new Error(`${def.id}: ${rule}: ${msg}`);
+      });
+    } catch (e) {
+      violations.push(e instanceof Error ? e.message : String(e));
+    }
+  };
+  collect((fail) => checkRelief(def, built, fail));
+  collect((fail) => checkAlternateRoute(def, built, reached, fail));
+  collect((fail) => checkEnemyIdentity(def, built, prev, fail));
+  collect((fail) => checkTopEarnable(def, built, reached, fail));
+  return {
+    relief: measureRelief(def, built),
+    dual: measureDualLanes(def, built, reached),
+    kinds: [...new Set<EnemyKind>(built.enemies.map((e) => e.kind))].sort(),
+    topGrab: def.boss ? null : measureTopGrab(built, reached),
+    violations,
+  };
 }

@@ -29,6 +29,10 @@ export const SCRIPTS: Record<CutsceneId, CutsceneScript> = {
     id: 'w1-end',
     music: 'cutscene',
     beats: [
+      // The grand escape — the boss "fight" ends in a SPECTACLE, not a text box.
+      { art: 'grand-escape', speaker: '', text: 'And so, before anyone could ask a single question, the kidnapper kidnapped onward.' },
+      { art: 'grand-escape', speaker: 'BOWSONARO', text: 'This castle was RIGGED anyway! We relocate! For security reasons! MY security!' },
+      { art: 'grand-escape', speaker: 'PRINCESS IMPEACH', text: 'Goodbye, little green man! Do not follow us to the next castle! Nobody knows which one it is! Many castles! The best castles!' },
       { art: 'too-late', speaker: 'ESTRADA', text: 'NOOO! Too late! AGAIN! What are the odds?! (Do not answer. I know the odds. I set them.)' },
       { art: 'too-late', speaker: 'MANGIANI', text: 'This coffee cup is still warm. Whose is it?' },
       { art: 'too-late', speaker: 'ESTRADA', text: "Bowsonaro's. He drinks castle coffee. Everyone knows this. It is documented." },
@@ -43,6 +47,8 @@ export const SCRIPTS: Record<CutsceneId, CutsceneScript> = {
     id: 'w2-end',
     music: 'cutscene',
     beats: [
+      { art: 'grand-escape', speaker: 'BOWSONARO', text: 'The pipes leak?! SO WHAT! A strong kingdom needs strong leaks! Historically, turtles LOVE humidity!' },
+      { art: 'grand-escape', speaker: 'PRINCESS IMPEACH', text: 'This is the cleanest kidnapping in history. Everyone says so. Even the rats. Beautiful rats. They certified it.' },
       // The door-evidence gag ESCALATES per world: coffee (w1) -> cigarette
       // (here) -> cat bowl (w3). Never the same evidence twice.
       { art: 'too-late-2', speaker: 'ESTRADA', text: 'Too late AGAIN! She was here MINUTES ago! I am DEVASTATED! Visibly!' },
@@ -59,6 +65,9 @@ export const SCRIPTS: Record<CutsceneId, CutsceneScript> = {
     id: 'w3-end',
     music: 'cutscene',
     beats: [
+      { art: 'grand-escape', speaker: '', text: 'The management thanked everyone for their visit. The princess left with the house winnings.' },
+      { art: 'grand-escape', speaker: 'BOWSONARO', text: 'The casino was rigged! BY ME! Which is legal, because I also appointed the judges! ALL the judges!' },
+      { art: 'grand-escape', speaker: 'PRINCESS IMPEACH', text: 'We take the PRIVATE jetpack now. Very exclusive. Gold seats. You would not understand, plumber.' },
       { art: 'too-late-3', speaker: 'ESTRADA', text: 'SO close! If only I had not stopped to personally certify those four thousand casino coins!' },
       { art: 'too-late-3', speaker: 'MANGIANI', text: 'The cat bowl. FRESH kibble. Somebody fed the kidnapper’s cat... on schedule.' },
       { art: 'too-late-3', speaker: 'ESTRADA', text: 'A fed cat proves nothing. Hungry cats testify. That is basic law, Mangiani.' },
