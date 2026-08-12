@@ -77,10 +77,15 @@ describe('tracks: shape', () => {
     for (const id of IDS) expect(TRACKS[id].name.length).toBeGreaterThan(3);
   });
 
-  it('keeps every base tempo inside the house band 104..124', () => {
+  // THE TEMPO BAND WAS DELIBERATELY SUPERSEDED (playtest 2026-08-12): the
+  // old 104..124 band was inherited from a slower house game, and the score
+  // read "really slow compared to the original game". The classic-genre feel
+  // is quick constant subdivision, so the band is now 132..168 — still
+  // narrow enough that the ±12% intensity modulation reads.
+  it('keeps every base tempo inside the (raised) house band 132..168', () => {
     for (const id of IDS) {
-      expect(TRACKS[id].bpm, id).toBeGreaterThanOrEqual(104);
-      expect(TRACKS[id].bpm, id).toBeLessThanOrEqual(124);
+      expect(TRACKS[id].bpm, id).toBeGreaterThanOrEqual(132);
+      expect(TRACKS[id].bpm, id).toBeLessThanOrEqual(168);
     }
   });
 

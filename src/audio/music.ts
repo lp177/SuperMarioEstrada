@@ -22,14 +22,15 @@
 // and the sourNotes gag (a single deliberately off-scale nudge, once per
 // loop).
 //
-// Intensity (0..1): scales tempo ±12% around the base bpm, opens the master
-// lowpass, and drives the NOISE channel's energy (drum gain rises with heat;
-// past HOT_NOISE_AT a ghost hat rides every off-8th — the Kondo-style
-// interactive percussion layer that makes charged full-run play audibly
-// hotter). Everything moves SMOOTHLY (per-frame easing in update(), FAST
-// downward so intensity 0 doubles as a duck — the death jingle plays over a
-// score that steps aside) and only affects *future* beats — playheads are
-// never reset.
+// Intensity (0..1): scales tempo ±12% around the base bpm and drives the
+// NOISE channel's energy (drum gain rises with heat; past HOT_NOISE_AT a
+// ghost hat rides every off-8th — the Kondo-style interactive percussion
+// layer that makes charged full-run play audibly hotter). The master lowpass
+// is a DUCK effect only (fully open through normal play — retro rawness;
+// see FILTER_* below). Everything moves SMOOTHLY (per-frame easing in
+// update(), FAST downward so intensity 0 doubles as a duck — the death
+// jingle plays over a score that steps aside) and only affects *future*
+// beats — playheads are never reset.
 //
 // HOME SET: playHome() rotates title/home-b/home-c through a deterministic
 // shuffle bag (all 3 before any repeat, never the same twice in a row).
@@ -68,9 +69,17 @@ const LOOKAHEAD_S = 0.12;
 const XFADE_S = 0.55;
 /** Tempo travels bpm * (1 ± TEMPO_SPAN/2) across intensity 0..1. */
 const TEMPO_SPAN = 0.24;
-/** Master lowpass: 900 Hz closed .. ~7200 Hz open. */
-const FILTER_BASE_HZ = 900;
-const FILTER_OCTAVES = 3;
+/** Master lowpass, RETRO-RAWNESS retune: it is a DUCK effect now, not a
+ *  tone control. Fully open (~12 kHz — effectively bypass) through all
+ *  normal play so the pulses read bright, dry and slightly harsh like the
+ *  classic chip; it only closes toward 900 Hz as intensity collapses to 0
+ *  (the solo-death duck). Run heat still reads via tempo + the noise layer. */
+const FILTER_MIN_HZ = 900;
+const FILTER_MAX_HZ = 12000;
+/** Intensity at (and above) which the filter is fully open. Idle play sits
+ *  at ~0.28 (see Level.intensity) — comfortably open; only the duck dips
+ *  below. */
+const FILTER_OPEN_AT = 0.25;
 /** Per-frame easing toward the intensity target (60 Hz update()). Rising is
  *  slow (heat builds), falling is FAST — a dropped target reads as a duck
  *  (Level sends 0 during the solo death sequence; the score must bow out
@@ -117,11 +126,13 @@ const TONAL: Record<VoiceName, TonalSpec | null> = {
   noise: null,
 };
 
-/** The closed drum set for noise-pattern degrees (see tracks.ts grammar). */
+/** The closed drum set for noise-pattern degrees (see tracks.ts grammar).
+ *  Retro-rawness retune: SHORT and clicky — the classic noise channel ticks,
+ *  it never washes. */
 const DRUMS: Record<number, { filter: BiquadFilterType; freq: number; durS: number; gain: number }> = {
-  0: { filter: 'highpass', freq: 6000, durS: 0.035, gain: 0.1 }, // closed hat
-  1: { filter: 'bandpass', freq: 1900, durS: 0.09, gain: 0.16 }, // snare
-  2: { filter: 'lowpass', freq: 220, durS: 0.1, gain: 0.3 }, // low thud
+  0: { filter: 'highpass', freq: 6500, durS: 0.022, gain: 0.1 }, // closed hat
+  1: { filter: 'bandpass', freq: 2000, durS: 0.06, gain: 0.16 }, // snare
+  2: { filter: 'lowpass', freq: 220, durS: 0.08, gain: 0.3 }, // low thud
 };
 
 /** Re-roll table for release() — exhaustive, deterministic (no Math.random
@@ -357,7 +368,8 @@ export class Music implements MusicLike {
   }
 
   private cutoffHz(): number {
-    return FILTER_BASE_HZ * Math.pow(2, this.intensityCur * FILTER_OCTAVES);
+    const t = Math.min(1, Math.max(0, this.intensityCur / FILTER_OPEN_AT));
+    return FILTER_MIN_HZ * Math.pow(FILTER_MAX_HZ / FILTER_MIN_HZ, t);
   }
 
   /** Draw one uint32 from the shuffle-bag stream. */
@@ -547,7 +559,8 @@ export class Music implements MusicLike {
     const sour = l.cfg.sourNotes?.find((sn) => sn.voice === name && sn.step === idx);
     if (sour) midi += sour.semi;
     const freq = midiToFreq(midi);
-    const durS = Math.max(0.04, n.len * stepDur * 0.92);
+    // RETRO ENVELOPE: crisp staccato gate — 0.85 of the hold, no long tail.
+    const durS = Math.max(0.05, n.len * stepDur * 0.85);
     const o = ctx.createOscillator();
     if (name === 'lead') {
       // Exhaustive over LeadTimbre — all pulse-family (channel discipline).
@@ -572,14 +585,17 @@ export class Music implements MusicLike {
       o.type = spec.wave;
     }
     o.frequency.value = freq;
+    // The chip has no ADSR: INSTANT attack (1.5 ms anti-click ramp only),
+    // flat sustain, then a fast 20 ms gate-off. Bright, dry, no smear.
     const g = ctx.createGain();
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(spec.gain, t + 0.006);
+    g.gain.linearRampToValueAtTime(spec.gain, t + 0.0015);
+    g.gain.setValueAtTime(spec.gain, Math.max(t + 0.0015, t + durS - 0.02));
     g.gain.exponentialRampToValueAtTime(0.0001, t + durS);
     o.connect(g);
     g.connect(l.bus);
     o.start(t);
-    o.stop(t + durS + 0.03);
+    o.stop(t + durS + 0.02);
   }
 
   /** One drum hit. `energy` is the intensity-driven gain multiplier — the

@@ -269,8 +269,9 @@ export class Sfx implements SfxLike {
     const t = ctx.currentTime + (r.delay ?? 0) / 60;
     const durS = r.dur / 60;
     const g = ctx.createGain();
+    // Retro rawness: INSTANT attack — 1.5 ms anti-click ramp only.
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(r.vol * SFX_HEADROOM, t + 0.004);
+    g.gain.linearRampToValueAtTime(r.vol * SFX_HEADROOM, t + 0.0015);
     g.gain.exponentialRampToValueAtTime(0.0001, t + durS);
     g.connect(master);
 

@@ -81,7 +81,10 @@ export interface SourNote {
 
 export interface TrackConfig {
   name: string;
-  /** Base tempo. House band: 104..124 so intensity modulation reads. */
+  /** Base tempo. House band: 132..168 (playtest-superseded from the old
+   *  104..124, which was inherited from a slower game — the classic-genre
+   *  feel needs quick constant subdivision). Kept narrow so the ±12%
+   *  intensity modulation still reads. */
   bpm: number;
   /** Semitone offsets from root, PENTATONIC-SAFE (no semitone pairs, no
    *  tritone against the root). Ascending, starts at 0, all within 0..11. */
@@ -163,10 +166,14 @@ export function midiToFreq(midi: number): number {
 //
 // TEMPO IS KINETIC: the groove sets the player's stride. At full run the
 // stride animation flips every 8 frames (painter: period 4, cycle of 4), so
-// footfalls land at 7.5 Hz — which is exactly sixteenth notes at 112.5 bpm.
-// The meadow (the game's default gait) sits at 112 so the run locks to the
-// groove; everything else stays inside the house band 104..124 so intensity
-// modulation (±12% tempo) never leaves it unreadable.
+// footfalls land at 7.5 Hz. At the meadow's 150 bpm a beat is 24 frames:
+// triplet subdivision is 8 frames — the footfall rate itself — and the
+// meadow's swung eighths (swing 1/3 = the shuffle) land at frames 0 and 16
+// of every beat, i.e. EXACTLY on alternating footfalls. Running IS keeping
+// time with this tune. Everything else stays inside the (playtest-raised)
+// house band 132..168 so intensity modulation (±12% tempo) never leaves it
+// unreadable. DRIVE comes from subdivision, not just the metronome: pumping
+// bass eighths, hats on the eighth grid, leads that move.
 //
 // EVERY TRACK IS DIEGETIC — the score the conspirators commissioned for their
 // own production, world by world (see AGENTS.md "THE WORLD IS A SET").
@@ -181,24 +188,24 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // you your own house.
   title: {
     name: "Grifter's Paradise",
-    bpm: 114,
+    bpm: 156,
     scale: [0, 2, 4, 7, 9],
     root: 47, // B2
     bars: 4,
-    swing: 0.24,
+    swing: 0.3,
     bass: {
       div: 2,
-      steps: '0 . 3, . 0 . 3, 3, | 1 . 3, . 1 . 4, . | 0 . 3, . 0 . 3, 3, | 2 . 4, . 0 . 3, .',
+      steps: '0 . 3, . 0 0 3, 3, | 1 . 3, . 1 1 4, . | 0 . 3, . 0 0 3, 3, | 2 . 4, . 0 0 3, .',
     },
     lead: {
       div: 2,
-      steps: "4 . 2 . 4 2 0 . | 1 2 1 . 0:2 . . . | . . . . . . . . | 4 . 0' . 4 2 1 .",
+      steps: "4 . 2 4 4 2 0 . | 1 2 1 2 0:2 . . . | . . . . . . . . | 4 . 0' 4 4 2 1 .",
     },
     arp: {
       div: 2,
       steps: ". . . . . . . . | . . . . . . 2 4 | 0' . 4 2 4 2 0 . | . . . . . . . .",
     },
-    noise: { div: 2, steps: '2 . 0 0 1 . 0 . | 2 . 0 0 1 0 0 .' },
+    noise: { div: 2, steps: '2 . 0 0 1 . 0 0 | 2 0 0 0 1 . 0 1' },
   },
 
   // Sleazy dominant-pentatonic finger-snap strut, heavier swing, big pauses:
@@ -206,12 +213,12 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // the entourage snapping back in every hole the lead leaves.
   'home-b': {
     name: 'Notary Public Enemy',
-    bpm: 108,
+    bpm: 144,
     scale: [0, 2, 4, 7, 10],
     root: 47, // B2
     bars: 4,
     swing: 0.3,
-    bass: { div: 2, steps: '0 . . 0 2 . 0 . | 3 . . 3 2 . 1 .' },
+    bass: { div: 2, steps: '0 . 0 0 2 . 0 . | 3 . 3 3 2 . 1 .' },
     lead: {
       div: 2,
       steps:
@@ -221,14 +228,14 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
       div: 2,
       steps: ". . . . 0' . . . | . . . . . . 4 2 | . . . . 0' . . . | . . . . . . 1 0",
     },
-    noise: { div: 2, steps: '2 . 0 1 . 0 1 .' },
+    noise: { div: 2, steps: '2 . 0 1 0 0 1 .' },
   },
 
   // Habanera bass, melodramatic hangs, a little flourish before the turn:
   // a tango danced alone with your signature on the contract.
   'home-c': {
     name: 'Terms of Service Tango',
-    bpm: 116,
+    bpm: 152,
     scale: [0, 2, 5, 7, 10],
     root: 43, // G2
     bars: 4,
@@ -245,30 +252,31 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // -- LEVEL THEMES ----------------------------------------------------------
 
   // W1 is Estrada's hero-movie set, and he scored it like the opening number
-  // of a beach resort: full calypso — oom-pah bass pushing the upbeats,
-  // marimba-staccato hook (short notes, sun between them), the high pulse
-  // answering bar 3 like a steel drum. 112 bpm = the full-run footfall lock
-  // (see TEMPO IS KINETIC above): running IS keeping time with this tune.
+  // of a beach resort: full calypso shuffle — pumping bass with upbeat
+  // pushes, marimba-staccato hook in constant eighth motion, the high pulse
+  // answering bar 3 like a steel drum. 150 bpm + swing 1/3 = the full-run
+  // footfall lock (see TEMPO IS KINETIC above): every swung eighth lands on
+  // a footfall — running IS keeping time with this tune.
   meadow: {
     name: 'Certified Sunshine (Calypso of the Con)',
-    bpm: 112,
+    bpm: 150,
     scale: [0, 2, 4, 7, 9],
     root: 45, // A2
     bars: 4,
-    swing: 0.26,
+    swing: 0.33,
     bass: {
       div: 2,
-      steps: '0 . . 3, 0 . 3, . | 1 . . 3, 1 . 3, . | 0 . . 3, 0 . 3, . | 4, . 3, . 0 . 0 .',
+      steps: '0 . 3, . 0 0 3, . | 1 . 3, . 1 1 3, . | 0 . 3, . 0 0 3, . | 4, . 3, . 0 0 0 .',
     },
     lead: {
       div: 2,
-      steps: "0' . 4 . 2 4 . . | 1 2 4 . 0:2 . . . | . . . . . . . . | 2 4 2 1 0:2 . . .",
+      steps: "0' . 4 4 2 4 0 . | 1 2 4 2 0:2 . . . | . . . . . . . . | 2 4 2 1 0 . 4, .",
     },
     arp: {
       div: 2,
-      steps: ". . . . . . . . | . . . . . . 3 4 | 0' . 4 . 2 4 0 . | . . . . . . . .",
+      steps: ". . . . . . . . | . . . . . . 3 4 | 0' 4 2 4 0' 4 2 . | . . . . . . . .",
     },
-    noise: { div: 2, steps: '2 . 0 0 1 . 0 0 | 2 0 0 0 1 . 0 .' },
+    noise: { div: 4, steps: '2 . 0 . 0 . 0 0 | 1 . 0 . 0 . 0 .' },
   },
 
   // The underground goes SPARSE — minimalism as strength: a soft triangle
@@ -276,9 +284,11 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // literal ECHO — the same stab, one bar later, same pitch, half the gain
   // (arp sits +2 octaves so it is authored a mark lower): laundered money
   // dripping through big empty pipes.
+  // (132 bpm — the SLOWEST of the set on purpose: the sparse doctrine
+  // stands, but at the raised floor it reads tense, not sleepy.)
   sewer: {
     name: 'Spin Cycle (Money Laundering Setting)',
-    bpm: 104,
+    bpm: 132,
     scale: [0, 3, 5, 7, 10],
     root: 41, // F2
     bars: 4,
@@ -299,15 +309,18 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // The house edge, orchestrated for exactly four channels.
   casino: {
     name: 'The House Always Wins',
-    bpm: 124,
+    bpm: 150,
     scale: [0, 2, 5, 7, 9],
     root: 50, // D3
     bars: 4,
     swing: 0.33,
-    bass: { div: 1, steps: '0, 1, 2, 3, 4, 3, 2, 1,' },
+    bass: {
+      div: 2,
+      steps: '0, . 1, . 2, . 3, 3, | 4, . 3, . 2, 2, 1, .',
+    },
     lead: {
       div: 2,
-      steps: "2' 1' 4 . 2 . 4 . | . . . . . . 1 2 | 2' 1' 4 . 2 4 1 . | 0':2 . . . . . . .",
+      steps: "2' 1' 4 2 2 . 4 . | . . . . . . 1 2 | 2' 1' 4 2 2 4 1 . | 0':2 . . . . . . .",
     },
     arp: {
       div: 2,
@@ -324,7 +337,7 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // hole the fife leaves (end of bar 2) — it still gets parade credit.
   castle: {
     name: 'Motorcade of the Mito',
-    bpm: 116,
+    bpm: 140,
     scale: [0, 2, 4, 7, 10],
     root: 40, // E2
     bars: 4,
@@ -351,7 +364,7 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // beat. The motorcade has left the road.
   boss: {
     name: 'The Parade Goes Feral',
-    bpm: 124,
+    bpm: 164,
     scale: [0, 2, 4, 7, 10],
     root: 43, // G2
     bars: 2,
@@ -373,7 +386,7 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // note, mid chord), melodramatic runs, a pianist paid in exposure.
   cutscene: {
     name: 'Pit Pianist (Reel 4, Slightly Late)',
-    bpm: 104,
+    bpm: 138,
     scale: [0, 2, 4, 7, 9],
     root: 57, // A3
     bars: 4,
@@ -393,7 +406,7 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // gap where the second trumpet (the arp) holds the ceremony together alone.
   ending: {
     name: 'Triumph (Terms and Conditions Apply)',
-    bpm: 120,
+    bpm: 152,
     scale: [0, 2, 4, 7, 9],
     root: 50, // D3
     bars: 4,
@@ -415,7 +428,7 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // drums (the phone line did not budget for a drummer).
   'hold-a': {
     name: 'Your Rescue Is Important to Us',
-    bpm: 106,
+    bpm: 134,
     scale: [0, 2, 4, 7, 9],
     root: 55, // G3
     bars: 4,
@@ -435,7 +448,7 @@ export const TRACKS: Record<TrackId, TrackConfig> = {
   // alone through its rests.
   'hold-b': {
     name: 'Please Continue to Hold (Est. Wait: 4 Worlds)',
-    bpm: 104,
+    bpm: 132,
     scale: [0, 2, 5, 7, 9],
     root: 53, // F3
     bars: 4,
