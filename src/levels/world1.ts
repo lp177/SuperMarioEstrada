@@ -17,7 +17,10 @@
 //     coins on it — looting feels good, hopping out is trivial). The trench
 //     slots are the short-approach gaps where a sprint takeoff could clip the
 //     far lip. Safe floors 3 deep survive ONLY as stunt mats under oneway
-//     ladders (re-enterable from below); crumble-bridge nets sit 2 deep.
+//     ladders (re-enterable from below); crumble-bridge nets sit 2 deep —
+//     and since the 2026-08 difficulty wave the FAR half of each net carries
+//     spikes (anchored on the net floor, rule 10): dawdling on the cardboard
+//     drops you onto teeth, dropping early still finds the clean half.
 //   - Warp features (playtest wave): w1a2 buries a bet-slip vault under the
 //     lane (warp in, loot, warp out ahead), w1a5 hides a tent-pole shortcut
 //     past the big gauntlet, w1a7 keeps the repossessed gold in a basement
@@ -345,6 +348,10 @@ export const world1: LevelDef[] = [
       c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: 1 });
       c = crumbleBridge(b, c.endX, c.endRow, { len: 4 }); // taped-cardboard walkway
       b.ground(96, 99, 24); // crash net 2 deep under the cardboard — hop out
+      b.spikes(98, 99, 23); // ...but props dept dumped the broken glass on the
+      // FAR half of the net (2026-08 difficulty wave: dawdle on the cardboard
+      // and the drop has teeth; the near half stays a clean landing). Rule 10:
+      // the shards sit ON the net floor and under the crumble deck.
       c = runway(b, c.endX, c.endRow, { len: 7, coinRow: 19 }); // 5 coins
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
@@ -453,6 +460,9 @@ export const world1: LevelDef[] = [
       c = steppes(b, c.endX, c.endRow, { count: 2, stepH: 2, treadW: 2, dir: 1 });
       c = crumbleBridge(b, c.endX, c.endRow, { len: 5 }); // the drawbridge, repossessed
       b.ground(74, 78, 24); // net 2 deep under the drawbridge — hop out
+      b.spikes(76, 78, 23); // 2026-08 difficulty wave: the repo men left the
+      // portcullis teeth in the moat net — the far 3 columns bite; drop early
+      // or pay. Anchored ON the net floor (rule 10).
       // THE BASEMENT VAULT: the repossessed gold is kept under the boom-mic
       // runway. A stub pipe before the gavel warps down into the sealed
       // strongroom; the exit warp surfaces on the drawbridge shoulder ahead.

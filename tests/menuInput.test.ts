@@ -19,6 +19,7 @@ function freshState(): InputState {
     run: false,
     firePressed: false,
     pausePressed: false,
+    swapPressed: false,
   };
 }
 
@@ -29,6 +30,10 @@ class StubInput implements InputLike {
   st: InputState = freshState();
   edgeSet = new Set<string>();
   stateCalls = 0;
+
+  setMode(): void {
+    // menus never switch modes; contract stub
+  }
 
   state(): InputState {
     this.stateCalls += 1;

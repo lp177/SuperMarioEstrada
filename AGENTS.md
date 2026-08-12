@@ -26,8 +26,15 @@ when they are coming. The princess has a strange accent. Bowser keeps talking
 about Brazilian politics. And the princess's hands are considerably larger than
 he remembers. Meanwhile, under the castle, the real Peach is still waiting.
 
-**The player plays Estrada** — a fake hero performing heroism. The comedy is the
-gap between the performance and the truth.
+**The player plays MANGIANI** (settled pivot, playtest-driven) — the only one
+genuinely motivated to clear the levels. YOU do all the running, stomping and
+rescuing; Estrada merely tags along off-screen and materializes at every castle
+door to plant his "MISSION FAILED SUCCESSFULLY" flag, take the credit, and file
+the certified excuse — for a failure the player just watched him not prevent.
+The comedy is the gap between who does the work and who signs it. Every
+player-facing surface must show Mangiani (in-level sprite, world-map token,
+respawns); Estrada keeps the title billing, the sting cards, the excuses and
+the cutscene theatrics — that IS the joke.
 
 ### Cast
 - **Super Mario Estrada** — player. Red cap, pencil moustache, notary stamp.
@@ -85,6 +92,31 @@ drawn sincerely. The fakeness belongs only to what the conspirators staged.
 
 The world map is their CONSPIRACY CORKBOARD: level polaroids pinned to cork,
 routes in red yarn, the castle circled in red marker.
+
+## Two heroes: solo swap + local co-op (settled, playtest-driven)
+
+- **Characters**: `mangiani` (P1's default — the honest worker) and `estrada`
+  (the credit-taker). IDENTICAL physics for now — PHYS is gate calibration;
+  differentiating stats requires a re-tune wave and is explicitly future work.
+  Only sprite, palette and fiction differ.
+- **Solo**: one body on screen; a rebindable `swap` action (default Tab +
+  pad button 3/Y-position) morphs the controlled hero in place, with a puff
+  effect. The swap action appears in the settings REBIND menu like any other.
+- **Local co-op** (chosen from the title menu): TWO bodies in the level.
+  P1 = Mangiani on the PRIMARY binding slots (letters block) + gamepad 0;
+  P2 = Estrada on the SECONDARY slots (arrows block) + gamepad 1. In co-op
+  the shared-slot merging of solo input is split by slot index; pads map by
+  index. No swap action in co-op.
+- **Camera in co-op**: follows the leading player; a player left behind
+  off-screen (or dead) becomes a BUBBLE that drifts to the leader and pops
+  back in on their jump press (modern co-op convention — never fight the
+  camera). Goal/checkpoints trigger on EITHER player; the backtrack ratchet
+  follows the leader; stats are shared (one kingdom, one ledger).
+- **Fiction**: in solo, cutscenes/stings unchanged (Estrada takes credit for
+  the player's work). In co-op the sting is the same joke played live: P2 IS
+  the person taking the credit.
+- The act gate stays SOLO (P1 physics) — co-op is additive and never gates
+  content.
 
 ## Campaign shape
 

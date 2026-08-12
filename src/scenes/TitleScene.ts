@@ -7,8 +7,8 @@ import { keyLabel } from '../core/keyboardLayout.ts';
 import { MenuNav } from '../ui/menuInput.ts';
 import { UI, panel, textShadow } from '../ui/theme.ts';
 
-const MAIN_ITEMS = ['START', 'WORLD MAP', 'SETTINGS'] as const;
-const REBINDABLE: ActionId[] = ['left', 'right', 'up', 'down', 'jump', 'run', 'pause'];
+const MAIN_ITEMS = ['START', '2 PLAYERS', 'WORLD MAP', 'SETTINGS'] as const;
+const REBINDABLE: ActionId[] = ['left', 'right', 'up', 'down', 'jump', 'run', 'pause', 'swap'];
 
 type Panel = 'main' | 'settings';
 
@@ -59,7 +59,8 @@ export class TitleScene implements SceneLike {
     else if (action === 'select') {
       sfx.play('ui-select');
       const item = MAIN_ITEMS[this.sel];
-      if (item === 'START') {
+      if (item === 'START' || item === '2 PLAYERS') {
+        this.services.coop = item === '2 PLAYERS';
         const at = continueAtMap(progress);
         if (!progress.seen['intro']) {
           this.game.changeScene('cutscene', { id: 'intro', then: { scene: 'worldmap', focus: at } });

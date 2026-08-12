@@ -22,6 +22,11 @@ export const DEFAULT_BINDINGS: Record<ActionId, string[]> = {
   jump: ['Space', 'KeyW', 'ArrowUp'],
   run: ['ShiftLeft', 'KeyF'],
   pause: ['Escape', 'Enter'],
+  // Solo hero swap (Mangiani <-> Estrada). ONE default code on purpose: in
+  // co-op, slot [0] belongs to P1 and slots [1..] to P2, so a lone code keeps
+  // the action P1-side; users may add a second in the rebind menu. Gamepad
+  // button 3 is hard-mapped to swap in input.ts (not stored here).
+  swap: ['Tab'],
 };
 
 function cloneBindings(b: Record<ActionId, string[]>): Record<ActionId, string[]> {
@@ -77,6 +82,10 @@ export function loadSettings(): SettingsData {
 
   const savedBindings = parsed['bindings'];
   if (isRecord(savedBindings)) {
+    // Iterating DEFAULT_BINDINGS' keys over a defaults-clone is also the
+    // BACKFILL path: an action absent from an older save (e.g. 'swap', which
+    // postdates the first release) keeps its default codes, so the returned
+    // Record<ActionId, string[]> is never incomplete.
     for (const a of Object.keys(DEFAULT_BINDINGS) as ActionId[]) {
       const codes = savedBindings[a];
       if (

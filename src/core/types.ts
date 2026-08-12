@@ -40,7 +40,9 @@ export type CutsceneArtId =
   | 'staged-kidnap'   // Bowsonaro theatrically carrying Impeach away
   | 'hero-speech'     // Estrada's balcony speech to terrified Toads
   | 'mangiani-joins'  // Mangiani with a tiny backpack, determined
-  | 'too-late'        // castle door, "she is in another castle", coffee cup
+  | 'too-late'        // castle door, "she is in another castle", WARM COFFEE
+  | 'too-late-2'      // same scene, escalated evidence: still-smoking cigarette
+  | 'too-late-3'      // same scene, escalated: the cat's bowl, fresh kibble
   | 'big-hands'       // Impeach waving; hands enormous; Mangiani squinting
   | 'ballot-rant'     // Bowsonaro ranting at a podium with turtle minions
   | 'coffee-break'    // Estrada on a break while the castle burns behind
@@ -73,6 +75,7 @@ export type PlayerSize = 'small' | 'certified' | 'goldpen';
 export type GameEvent =
   // player feel
   | 'jump' | 'land' | 'skid' | 'stomp'
+  | 'hero-swap'   // solo character switch; also the co-op bubble pop
   // pickups & blocks
   | 'coin' | 'certify' | 'goldbar' | 'secret'
   | 'block-bump' | 'block-empty' | 'brick-break'
@@ -91,8 +94,14 @@ export type GameEvent =
   | 'ui-move' | 'ui-select' | 'ui-back' | 'text-blip'
   ;
 
-/** Rebindable actions. Bindings store KeyboardEvent.code (physical position). */
-export type ActionId = 'left' | 'right' | 'up' | 'down' | 'jump' | 'run' | 'pause';
+/** Rebindable actions. Bindings store KeyboardEvent.code (physical position).
+ *  'swap' switches the controlled hero in SOLO mode (no-op in co-op). */
+export type ActionId = 'left' | 'right' | 'up' | 'down' | 'jump' | 'run' | 'pause' | 'swap';
+
+/** The two playable heroes. IDENTICAL physics (PHYS is gate calibration —
+ *  stat differences are future work); only sprite, palette, fiction differ.
+ *  Solo default = mangiani (the honest worker); P2 in co-op = estrada. */
+export type CharacterId = 'mangiani' | 'estrada';
 
 // ---------------------------------------------------------------------------
 // Levels
@@ -277,14 +286,26 @@ export interface InputState {
   run: boolean;         // held: run modifier; its edge is the pen throw
   firePressed: boolean; // edge of `run`
   pausePressed: boolean;
+  /** Edge of the solo hero-swap action. Always false in co-op channels. */
+  swapPressed: boolean;
 }
 
+/** Which input channel a co-op player reads. In SOLO there is one channel
+ *  merging every device and binding slot (current behavior). In CO-OP:
+ *  channel 0 = PRIMARY binding slots (bindings[a][0]) + gamepad index 0;
+ *  channel 1 = SECONDARY slots (bindings[a][1..]) + gamepad index 1. */
+export type PlayerChannel = 0 | 1;
+
 export interface InputLike {
-  state(): InputState;
+  /** Solo: call with no argument (merged channel). Co-op: per-channel. */
+  state(channel?: PlayerChannel): InputState;
+  /** 'solo' merges all devices/slots; 'coop' splits by slot + pad index. */
+  setMode(mode: 'solo' | 'coop'): void;
   endFrame(): void;
   /** Attach DOM listeners. The ONLY method that touches the DOM. */
   attach(target: EventTarget): void;
-  /** Raw pressed-edge codes since last endFrame — for menus & rebinding UI. */
+  /** Raw pressed-edge codes since last endFrame — for menus & rebinding UI.
+   *  Always device-merged (menus are shared surfaces). */
   edges(): ReadonlySet<string>;
 }
 
@@ -296,6 +317,13 @@ export interface InputLike {
  *  of the player's AABB, y grows downward. Half-extents depend on size and
  *  ducking (PHYS in constants.ts). Tile coords: tx = floor(px / TILE). */
 export interface PlayerLike {
+  /** Who this body is drawn as. Solo: swaps in place via the 'swap' action.
+   *  Co-op: fixed (P1 mangiani, P2 estrada). */
+  character: CharacterId;
+  /** Co-op bubble: frames until this player can pop back in at the leader
+   *  (0 = active and playing). Solo: always 0. The painter draws a bubbled
+   *  player as a floating bubble drifting toward the leader. */
+  bubbleT: number;
   x: number;
   y: number;
   vx: number;
@@ -405,7 +433,13 @@ export interface LevelStats {
 export interface LevelLike {
   readonly def: LevelDef;
   readonly map: TileMapLike;
+  /** The lead body — players[0]. Kept as the single-player view: the gate,
+   *  probes and most systems address P1 through this. */
   readonly player: PlayerLike;
+  /** All active bodies: [P1] solo, [P1, P2] co-op. Entities, hazards, goal
+   *  and checkpoint triggers consider EVERY member; the camera and backtrack
+   *  ratchet follow the leader (largest x among non-bubbled players). */
+  readonly players: readonly PlayerLike[];
   readonly entities: readonly EntityLike[];
   readonly stats: LevelStats;
   camera: CameraState;
@@ -419,8 +453,9 @@ export interface LevelLike {
   readonly boss: BossLike | null;
   /** True once the goal ceremony finished; scene advances to sting/cutscene. */
   readonly finished: boolean;
-  /** Run one 1/60s step. Returns the events raised this step. */
-  update(input: InputState): GameEvent[];
+  /** Run one 1/60s step. Solo passes one InputState; co-op passes two
+   *  (index-matched to players). Returns the events raised this step. */
+  update(input: InputState, input2?: InputState): GameEvent[];
 }
 
 // ---------------------------------------------------------------------------
@@ -521,12 +556,12 @@ export interface SettingsData {
 
 export type SceneParams = {
   title: Record<string, never>;
-  worldmap: { focus?: LevelId };
+  worldmap: { focus?: LevelId; coop?: boolean };
   cutscene: {
     id: CutsceneId;
     then: { scene: 'title' } | { scene: 'worldmap'; focus?: LevelId } | { scene: 'level'; levelId: LevelId };
   };
-  level: { levelId: LevelId };
+  level: { levelId: LevelId; coop?: boolean };
 };
 
 export interface SceneLike {

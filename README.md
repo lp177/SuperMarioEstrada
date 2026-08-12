@@ -6,9 +6,13 @@ Mushroom Kingdom to bet its gold on one "impossible" event — *"Princess Peach 
 kidnapped"* — certify every coin through a very respectable royal notary, then kidnap her
 themselves. Trump squeezes into the dress and becomes **Princess Impeach** (enormous hands,
 suspicious accent), Bolsonaro straps on a spiked shell as **Bowsonaro**, and Estrada plays the
-hero who always arrives *just* too late. You play Estrada, sabotaging your own rescue in front
-of the one honest witness — **Mangiani**, who lost everything on the bet, insists on helping,
-and is starting to notice things.
+hero who always arrives *just* too late. **You play Mangiani** — the honest brother who lost
+everything on the bet and is the only one actually fighting through the kingdom. Estrada
+"leads" the rescue from somewhere behind you, arrives at every castle just in time to plant a
+*MISSION FAILED SUCCESSFULLY* flag over work you did, and files a certified excuse. A swap key
+lets you take Estrada for a stroll yourself, and in local co-op a second player IS Estrada —
+secondary keys (the arrows) on a shared keyboard, or a second gamepad. Level after level, the
+excuses stop adding up — and Mangiani is starting to notice things.
 
 **▶ Play it: <https://lp177.github.io/SuperMarioEstrada/>**
 

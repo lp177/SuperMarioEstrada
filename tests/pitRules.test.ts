@@ -36,6 +36,7 @@ const IDLE: InputState = {
   run: false,
   firePressed: false,
   pausePressed: false,
+  swapPressed: false,
 };
 
 // ---------------------------------------------------------------------------
@@ -179,6 +180,25 @@ const warpEscapePit = pitAct('Fixture Warp Escape', (b) => {
   b.warpPipe(37, 29, 2, 50, 24, 2); // ...but the warp IS the exit
 });
 
+/** The playtest complaint verbatim: spikes hovering 4 rows over the lane,
+ *  touching nothing solid. Rule 10 must name the act and the tile. */
+const floatingSpikes = pitAct('Fixture Floating Spikes', (b) => {
+  b.ground(30, 41, 26); // flat lane straight across
+  b.spikes(34, 35, 22); // "just floating in air" — no neighbor anywhere
+});
+
+/** Every legal anchor mode at once: a floor-spiked trench (solid directly
+ *  below), and ceiling spikes under a brick lintel (solid directly above).
+ *  All anchored — rule 10 must PASS this act. */
+const anchoredSpikes = pitAct('Fixture Anchored Spikes', (b) => {
+  b.ground(30, 33, 26);
+  b.ground(34, 35, 28); // trench floor...
+  b.spikes(34, 35, 27); // ...carpet sits ON it (2 deep: hop out, rule 8 ok)
+  b.ground(36, 41, 26);
+  b.platform(38, 39, 22, 'brick'); // lintel over the lane...
+  b.spikes(38, 39, 23); // ...ceiling spikes hang FROM it (2 rows clearance)
+});
+
 // ---------------------------------------------------------------------------
 // checkAct verdicts
 // ---------------------------------------------------------------------------
@@ -232,6 +252,16 @@ describe('pit rules — checkAct verdicts', () => {
 
   it('accepts the spike pocket with a plain 4-row wall (escape probe passes)', () => {
     expect(() => checkAct(clearSpikePit)).not.toThrow();
+  });
+
+  it('rejects spikes floating in mid-air (rule 10)', () => {
+    expect(() => checkAct(floatingSpikes)).toThrow(
+      /w1a2: rule 10 \(hazards anchored\).*spike at .*tile \(34,22\).*floats/s,
+    );
+  });
+
+  it('accepts anchored spikes: floor carpet on its floor, ceiling row under its lintel', () => {
+    expect(() => checkAct(anchoredSpikes)).not.toThrow();
   });
 });
 

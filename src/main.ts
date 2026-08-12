@@ -31,6 +31,7 @@ const services: Services = {
     saveProgress(p);
   },
   reducedMotion: () => effectiveReducedMotion(settings),
+  coop: false,
 };
 
 // Exhaustive scene registry — a SceneName missing here fails to compile.

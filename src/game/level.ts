@@ -4,7 +4,14 @@
 // Owns the fixed 1/60s step order, the event list + event sources of the
 // current step, the seeded entity RNG stream, the camera, the backtrack
 // ratchet, the crumble fuses, the goal ceremony and the boss gates.
-// Entities REPORT contact; only Level.damagePlayer / Level.kill act on it.
+// Entities REPORT contact; only Level.damage / Level.kill act on it.
+//
+// TWO HEROES: solo runs one body (players = [P1 mangiani], morphable in place
+// via swapCharacter); local co-op runs two (P2 = estrada, input2). Every
+// per-player system below loops over `players`; entities and the boss act
+// against the NEAREST active body; camera/ratchet follow the LEADER (max x
+// among active bodies). The solo path stays bit-identical to the one-player
+// original — co-op is additive and never gates content.
 // ============================================================================
 
 import type {
@@ -12,6 +19,7 @@ import type {
   BossLike,
   BuiltLevel,
   CameraState,
+  CharacterId,
   Contact,
   EnemyKind,
   EntityCtx,
@@ -81,6 +89,40 @@ const SHELL_MIN_SPEED = 0.1;
  *  (mirrors the boss's internal stomp stagger, which Level cannot see). */
 const BOSS_PEN_STAGGER = 45;
 
+// -- co-op tuning (fixed by the two-hero brief; solo never reads these) -----
+/** P2 spawns/respawns this far right of P1 — side by side, not stacked. */
+const P2_SPAWN_DX = 20;
+/** Bubble countdown: frames from death to hovering (pop-ready) next to the
+ *  leader. Counts 90 -> 1 and HOLDS at 1 while hovering, so `bubbleT > 0`
+ *  stays the painter's "draw me as a bubble" test; the pop clears it to 0. */
+const BUBBLE_FRAMES = 90;
+/** Bubble drift speed toward the leader, px/frame. */
+const BUBBLE_DRIFT = 2.5;
+/** Grace invulnerability granted by the bubble pop. */
+const BUBBLE_POP_INVULN = 60;
+/** The bubble hovers this many px above the leader's center. */
+const BUBBLE_HOVER_DY = 24;
+
+/** Exhaustive over CharacterId — the solo swap toggle. */
+const OTHER_HERO: Record<CharacterId, CharacterId> = {
+  mangiani: 'estrada',
+  estrada: 'mangiani',
+};
+
+/** All-false input: what a missing co-op channel reads. */
+const NO_INPUT: InputState = Object.freeze({
+  left: false,
+  right: false,
+  up: false,
+  down: false,
+  jump: false,
+  jumpPressed: false,
+  run: false,
+  firePressed: false,
+  pausePressed: false,
+  swapPressed: false,
+});
+
 /** Ambient family — belt-and-braces distance gate on top of the emitters'
  *  own gating (the emitter MUST gate; Level drops strays anyway). */
 const AMBIENT_EVENTS: ReadonlySet<GameEvent> = new Set<GameEvent>([
@@ -122,7 +164,11 @@ function clamp(v: number, lo: number, hi: number): number {
 export class Level implements LevelLike {
   readonly def: LevelDef;
   readonly map: TileMapLike;
+  /** The lead body — players[0]. The gate, probes and the whole solo path
+   *  address P1 through this. */
   readonly player: PlayerLike;
+  /** All bodies: [P1] solo, [P1, P2] co-op. */
+  readonly players: readonly PlayerLike[];
   readonly stats: LevelStats;
   camera: CameraState;
   readonly boss: BossLike | null;
@@ -142,9 +188,21 @@ export class Level implements LevelLike {
   private readonly ctx: EntityCtx;
 
   private respawnPoint: SpawnPoint;
-  /** Warp links from the builder; transit state while riding a pipe. */
+  /** Warp links from the builder; transit state while riding a pipe. Only
+   *  ONE warp is ever active — first come; the whole world pauses during. */
   private readonly warps: WarpLink[];
-  private activeWarp: { link: WarpLink; phase: 'in' | 'out'; t: number } | null = null;
+  private activeWarp: {
+    link: WarpLink;
+    phase: 'in' | 'out';
+    t: number;
+    rider: PlayerLike;
+  } | null = null;
+  /** Which body compressed each spring this step (set during the entity
+   *  pass, consumed by the launch pass). Cleared every step. */
+  private readonly springTargets = new Map<EntityLike, PlayerLike>();
+  /** Solo swap queued by the scene between steps; the next update() emits
+   *  the 'hero-swap' event here so it rides that step's event list. */
+  private pendingSwapAt: SpawnPoint | null = null;
   /** Counts down after death; at 0 the player respawns. -1 = idle. */
   private deathTimer = -1;
   /** Counts down after 'goal'; at 0 'flag-plant' fires. -1 = idle. */
@@ -156,7 +214,7 @@ export class Level implements LevelLike {
   private gatesUp = false;
   private gateTiles: { tx: number; ty: number; prev: TileKind }[] = [];
 
-  constructor(def: LevelDef) {
+  constructor(def: LevelDef, opts?: { coop?: boolean }) {
     this.def = def;
     const built: BuiltLevel = buildLevel(def);
     this.map = built.map;
@@ -177,7 +235,14 @@ export class Level implements LevelLike {
       }
     }
 
-    this.player = new Player(built.start);
+    const bodies: PlayerLike[] = [new Player(built.start)];
+    if (opts?.coop) {
+      bodies.push(
+        new Player({ x: built.start.x + P2_SPAWN_DX, y: built.start.y }, 'estrada'),
+      );
+    }
+    this.players = bodies;
+    this.player = bodies[0]!;
     this.respawnPoint = { x: built.start.x, y: built.start.y };
     this.stats = {
       coins: 0,
@@ -228,6 +293,12 @@ export class Level implements LevelLike {
   get finished(): boolean {
     return this._finished;
   }
+  /** True while riding a warp pipe — the scene draws the player BEHIND the
+   *  tile layer then, so the pipe body occludes the sink/rise (otherwise the
+   *  sprite visibly slides down in FRONT of the pipe). */
+  get warping(): boolean {
+    return this.activeWarp !== null;
+  }
 
   /** 0..1 gameplay intensity hint for the music system. */
   get intensity(): number {
@@ -240,64 +311,84 @@ export class Level implements LevelLike {
   // -------------------------------------------------------------------------
   // The fixed 1/60s step.
   // -------------------------------------------------------------------------
-  update(input: InputState): GameEvent[] {
+  update(input: InputState, input2?: InputState): GameEvent[] {
     // 1. bookkeeping
     this.stats.frames++;
     this._eventSources.clear();
     this.events = [];
-    this.jumpHeld = input.jump; // stomp bounce height reads this step's hold
+    const inputs: readonly InputState[] =
+      this.players.length > 1 ? [input, input2 ?? NO_INPUT] : [input];
+    // stomp bounce height reads the STOMPER's hold this step
+    for (let i = 0; i < inputs.length; i++) this.jumpHelds[i] = inputs[i]!.jump;
     if (this.bossStaggerT > 0) this.bossStaggerT--;
+    // solo swap queued by the scene between steps (see swapCharacter)
+    if (this.pendingSwapAt) {
+      this.emitAt('hero-swap', this.pendingSwapAt.x, this.pendingSwapAt.y);
+      this.pendingSwapAt = null;
+    }
 
-    // 1b. warp transit: while riding a pipe the world holds its breath —
-    // physics, entities and hazards all pause; only the ride animates. This
-    // both looks classic and makes the transit state trivially safe.
+    // 1b. warp transit: while a body rides a pipe the world holds its breath —
+    // physics, entities and hazards all pause (BOTH bodies in co-op); only the
+    // ride animates. This both looks classic and makes transit trivially safe.
     if (this.activeWarp) {
       this.updateWarp();
-      for (const ev of this.player.events) this.events.push(ev);
+      for (const p of this.players) for (const ev of p.events) this.events.push(ev);
       return this.events;
     }
 
-    // 2. player physics. Player events are read at the END of the step: hurt()
-    // / bounce() / respawn() may append to player.events mid-step and reading
-    // early would drop them (they get cleared by the next update()).
-    this.player.update(input, this.map);
+    // 2. player physics (a bubbled body floats instead). Player events are
+    // read at the END of the step: hurt() / bounce() / respawn() may append
+    // to player.events mid-step and reading early would drop them (they get
+    // cleared by the next update()).
+    for (let i = 0; i < this.players.length; i++) {
+      const p = this.players[i]!;
+      if (p.bubbleT > 0) this.updateBubble(p, inputs[i]!);
+      else p.update(inputs[i]!, this.map);
+    }
 
     // 2b. warp entry: standing on a warp pipe's mouth and pressing down.
-    if (!this.player.dead && this.player.grounded && input.down) {
+    // Only ONE warp can be active at a time — first come (P1 breaks ties).
+    for (let i = 0; i < this.players.length && !this.activeWarp; i++) {
+      const p = this.players[i]!;
+      if (p.dead || p.bubbleT > 0 || !p.grounded || !inputs[i]!.down) continue;
       for (const w of this.warps) {
-        if (
-          Math.abs(this.player.x - w.ax) <= 10 &&
-          Math.abs(this.player.y + this.player.halfH - w.ay) <= 6
-        ) {
-          this.activeWarp = { link: w, phase: 'in', t: 0 };
+        if (Math.abs(p.x - w.ax) <= 10 && Math.abs(p.y + p.halfH - w.ay) <= 6) {
+          this.activeWarp = { link: w, phase: 'in', t: 0, rider: p };
           this.emitAt('pipe', w.ax, w.ay);
           break;
         }
       }
     }
 
-    // death timer -> respawn (runs after player.update so a 'respawn' raised
-    // by the player survives until the end-of-step collection)
+    // death timer -> full respawn (runs after the player updates so a
+    // 'respawn' raised by a player survives until the end-of-step collection).
+    // Solo: every death arms it. Co-op: only a full wipe does (bubbles are
+    // free); it then respawns EVERYONE at the checkpoint.
     if (this.player.dead && this.deathTimer > 0) {
       this.deathTimer--;
       if (this.deathTimer === 0) {
         this.deathTimer = -1;
-        this.player.respawn(this.respawnPoint);
-        this._backLimitX = Math.max(0, this.respawnPoint.x - BACKTRACK_SLACK);
-        this.snapCamera();
+        this.respawnAll();
       }
     }
 
-    // 3. head-bumped tile
-    const bump = this.player.bumpedTile;
-    if (bump && !this.player.dead) this.resolveBump(bump.tx, bump.ty);
-    this.player.bumpedTile = null; // consumed — never process a bump twice
+    // 3. head-bumped tiles (per body; bricks read the BUMPER's size)
+    for (const p of this.players) {
+      const bump = p.bumpedTile;
+      if (bump && !p.dead) this.resolveBump(p, bump.tx, bump.ty);
+      p.bumpedTile = null; // consumed — never process a bump twice
+    }
 
-    // 4. entities
+    // 4. entities. Each entity acts against the NEAREST active body (never a
+    // dead or bubbled one) and its Contact resolves against that same body.
+    this.springTargets.clear();
     for (const e of this.ents) {
       if (!e.alive) continue;
+      const target = this.nearestActive(e.x, e.y);
+      this.ctx.player = target;
       const contact = e.update(this.ctx);
-      this.resolveContact(contact, e);
+      if (e.kind === 'spring') this.springTargets.set(e, target);
+      this.resolveContact(contact, e, target);
       // The bottom of the map is open void now — anything that walks or is
       // kicked off the edge falls out of the world and is culled.
       if (e.y > this.map.pixelH + 200) e.alive = false;
@@ -309,16 +400,17 @@ export class Level implements LevelLike {
       const s = e as EntityLike & { triggered?: boolean };
       if (s.triggered) {
         s.triggered = false;
-        if (!this.player.dead) {
-          this.player.bounce(false);
-          this.player.vy = PHYS.springVy;
+        const rider = this.springTargets.get(e) ?? this.player;
+        if (!rider.dead) {
+          rider.bounce(false);
+          rider.vy = PHYS.springVy;
         }
         this.emitAt('spring', e.x, e.y);
       }
     }
 
     // 5. pens & shells
-    this.updatePensAndShells(input);
+    this.updatePensAndShells(inputs);
 
     // 6. boss
     this.updateBoss();
@@ -329,9 +421,10 @@ export class Level implements LevelLike {
     // 8. crumble scheduling + fuse ticking
     this.updateCrumble();
 
-    // 9. goal ceremony. A castle goal stays sealed until the staged encounter
-    // resolved — Bowsonaro must escape (or, in rage, actually fall). Without
-    // this a runner can sprint past the boss and finish the act mid-"fight".
+    // 9. goal ceremony — ANY active body crossing triggers it. A castle goal
+    // stays sealed until the staged encounter resolved — Bowsonaro must
+    // escape (or, in rage, actually fall). Without this a runner can sprint
+    // past the boss and finish the act mid-"fight".
     const bossResolved =
       this.boss === null ||
       this.boss.phase === 'escape' ||
@@ -339,9 +432,8 @@ export class Level implements LevelLike {
     if (
       !this._finished &&
       this.goalTimer < 0 &&
-      !this.player.dead &&
       bossResolved &&
-      this.player.x >= this.goalX
+      this.anyActiveAtGoal()
     ) {
       this.emitAt('goal', this.goalX, this.goalY);
       this.goalTimer = GOAL_CEREMONY_FRAMES;
@@ -353,23 +445,141 @@ export class Level implements LevelLike {
       }
     }
 
-    // 10. backtrack ratchet + camera. While the boss gates are up the ratchet
-    // freezes — the gates own confinement.
+    // 10. backtrack ratchet + camera — both follow the LEADER (max x among
+    // active bodies). While the boss gates are up the ratchet freezes — the
+    // gates own confinement.
     if (!this.gatesUp) {
-      this._backLimitX = Math.max(this._backLimitX, this.player.x - BACKTRACK_SLACK);
+      this._backLimitX = Math.max(this._backLimitX, this.leader().x - BACKTRACK_SLACK);
     }
-    const minX = this._backLimitX + this.player.halfW;
-    if (this.player.x < minX) {
-      this.player.x = minX;
-      if (this.player.vx < 0) this.player.vx = 0;
+    for (const p of this.players) {
+      if (p.bubbleT > 0) continue; // bubbles ignore the wall — they drift over it
+      const minX = this._backLimitX + p.halfW;
+      if (p.x < minX) {
+        p.x = minX;
+        if (p.vx < 0) p.vx = 0;
+      }
     }
     this.moveCamera();
 
     // collect player events (see step 2 note), then drop dead entities
-    for (const ev of this.player.events) this.events.push(ev);
+    for (const p of this.players) for (const ev of p.events) this.events.push(ev);
     if (this.ents.some((e) => !e.alive)) this.ents = this.ents.filter((e) => e.alive);
 
     return this.events;
+  }
+
+  // -------------------------------------------------------------------------
+  // Two-hero helpers
+  // -------------------------------------------------------------------------
+
+  /** SOLO hero morph (the scene calls this on the swap edge, right before
+   *  update()): toggles who P1 is drawn as. The 'hero-swap' event (blip +
+   *  puff) is queued and emitted by the NEXT update() so it rides that
+   *  step's event list. No-op in co-op — P2 IS the other hero. */
+  swapCharacter(): void {
+    if (this.players.length > 1) return;
+    const p = this.player;
+    p.character = OTHER_HERO[p.character];
+    this.pendingSwapAt = { x: p.x, y: p.y };
+  }
+
+  /** Active = playing right now: not dead, not bubbled. */
+  private isActive(p: PlayerLike): boolean {
+    return !p.dead && p.bubbleT === 0;
+  }
+
+  /** The leading active body (max x), or null when nobody is active. */
+  private activeLeader(): PlayerLike | null {
+    let best: PlayerLike | null = null;
+    for (const p of this.players) {
+      if (!this.isActive(p)) continue;
+      if (best === null || p.x > best.x) best = p;
+    }
+    return best;
+  }
+
+  /** The camera/ratchet anchor: the leading active body, falling back to P1
+   *  when nobody is active (solo death — today's corpse-watching camera). */
+  private leader(): PlayerLike {
+    return this.activeLeader() ?? this.player;
+  }
+
+  /** The body nearest to (x, y) among the active ones; P1 as the inert
+   *  fallback when nobody is active (matches the solo dead-player step). */
+  private nearestActive(x: number, y: number): PlayerLike {
+    let best: PlayerLike | null = null;
+    let bestD = Infinity;
+    for (const p of this.players) {
+      if (!this.isActive(p)) continue;
+      const dx = p.x - x;
+      const dy = p.y - y;
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        best = p;
+      }
+    }
+    return best ?? this.player;
+  }
+
+  private anyActiveAtGoal(): boolean {
+    for (const p of this.players) {
+      if (this.isActive(p) && p.x >= this.goalX) return true;
+    }
+    return false;
+  }
+
+  private jumpHeldFor(p: PlayerLike): boolean {
+    return this.jumpHelds[this.players.indexOf(p)] ?? false;
+  }
+
+  /** One bubbled body's step: inert, intangible, drifting toward a hover
+   *  point above the leader. bubbleT counts down to 1 and holds (hovering);
+   *  the pop — this channel's jump edge while hovering — reactivates the
+   *  body at the leader's position with grace invulnerability. */
+  private updateBubble(p: PlayerLike, input: InputState): void {
+    p.events.length = 0; // a bubble raises nothing; stale events must not re-emit
+    p.bumpedTile = null;
+    const leader = this.activeLeader();
+    if (leader === null) return; // full wipe pending — the death timer respawns everyone
+    const dx = leader.x - p.x;
+    const dy = leader.y - BUBBLE_HOVER_DY - p.y;
+    const d = Math.hypot(dx, dy);
+    if (d > BUBBLE_DRIFT) {
+      p.x += (dx / d) * BUBBLE_DRIFT;
+      p.y += (dy / d) * BUBBLE_DRIFT;
+    } else {
+      p.x = leader.x;
+      p.y = leader.y - BUBBLE_HOVER_DY;
+    }
+    if (p.bubbleT > 1) {
+      p.bubbleT--; // still counting down — no pop yet
+      return;
+    }
+    if (input.jumpPressed) {
+      p.bubbleT = 0;
+      p.dead = false;
+      p.x = leader.x;
+      p.y = leader.y;
+      p.vx = 0;
+      p.vy = 0;
+      p.grounded = false;
+      p.ducking = false;
+      p.skidding = false;
+      p.invulnT = BUBBLE_POP_INVULN;
+      this.emitAt('hero-swap', p.x, p.y); // the pop shares the morph blip
+    }
+  }
+
+  /** Everyone back at the checkpoint (solo: the one body — today's path). */
+  private respawnAll(): void {
+    for (let i = 0; i < this.players.length; i++) {
+      const p = this.players[i]!;
+      p.bubbleT = 0;
+      p.respawn({ x: this.respawnPoint.x + i * P2_SPAWN_DX, y: this.respawnPoint.y });
+    }
+    this._backLimitX = Math.max(0, this.respawnPoint.x - BACKTRACK_SLACK);
+    this.snapCamera();
   }
 
   /** The pipe ride: sink into A, teleport, rise out of B. The ratchet and
@@ -378,7 +588,7 @@ export class Level implements LevelLike {
   private updateWarp(): void {
     const w = this.activeWarp;
     if (!w) return;
-    const p = this.player;
+    const p = w.rider;
     w.t++;
     p.vx = 0;
     p.vy = 0;
@@ -403,25 +613,38 @@ export class Level implements LevelLike {
   }
 
   // -------------------------------------------------------------------------
-  // THE ONLY damage path.
+  // THE ONLY damage path — per body now, still the single caller of hurt().
   // -------------------------------------------------------------------------
-  private damagePlayer(fromX: number): void {
-    if (this.player.dead) return;
-    const hurt = this.player.hurt(fromX);
+  private damage(p: PlayerLike, fromX: number): void {
+    if (p.dead || p.bubbleT > 0) return;
+    const hurt = p.hurt(fromX);
     if (!hurt) return;
-    if (this.player.dead) {
+    if (p.dead) {
       // 'die' was already raised by the player itself
-      this.stats.deaths++;
-      this.deathTimer = RESPAWN_DELAY;
+      this.onDeath(p);
     }
   }
 
   /** Instant death (lava, void): bypasses sizes and invulnerability. */
-  private kill(): void {
-    if (this.player.dead) return;
-    this.player.dead = true;
-    this.player.vx = 0;
+  private kill(p: PlayerLike): void {
+    if (p.dead || p.bubbleT > 0) return;
+    p.dead = true;
+    p.vx = 0;
     this.events.push('die');
+    this.onDeath(p);
+  }
+
+  /** Post-death routing. Solo — and a co-op full wipe — takes the classic
+   *  counted-death respawn timer. A co-op death with a live partner is a
+   *  FREE bubble instead (generous house tuning: deaths only count when the
+   *  whole team wipes). */
+  private onDeath(p: PlayerLike): void {
+    if (this.players.length > 1 && this.activeLeader() !== null) {
+      p.bubbleT = BUBBLE_FRAMES; // p.dead stays true: inert & intangible
+      p.vx = 0;
+      p.vy = 0;
+      return;
+    }
     this.stats.deaths++;
     this.deathTimer = RESPAWN_DELAY;
   }
@@ -445,9 +668,9 @@ export class Level implements LevelLike {
   }
 
   // -------------------------------------------------------------------------
-  // Step 3: bumped tiles
+  // Step 3: bumped tiles (p = the body whose head hit the tile)
   // -------------------------------------------------------------------------
-  private resolveBump(tx: number, ty: number): void {
+  private resolveBump(p: PlayerLike, tx: number, ty: number): void {
     const bx = (tx + 0.5) * TILE;
     const by = (ty + 0.5) * TILE;
     const kind = this.map.tileAt(tx, ty);
@@ -464,7 +687,7 @@ export class Level implements LevelLike {
         break;
       }
       case 'brick': {
-        if (this.player.size !== 'small') {
+        if (p.size !== 'small') {
           this.emitAt('brick-break', bx, by);
           this.map.setTile(tx, ty, 'empty');
         } else {
@@ -517,10 +740,10 @@ export class Level implements LevelLike {
   }
 
   // -------------------------------------------------------------------------
-  // Step 4: entity contact resolution
+  // Step 4: entity contact resolution (target = the body the entity acted on)
   // -------------------------------------------------------------------------
-  private resolveContact(contact: Contact, e: EntityLike): void {
-    if (contact !== 'none' && this.player.dead) return; // dead player is inert
+  private resolveContact(contact: Contact, e: EntityLike, target: PlayerLike): void {
+    if (contact !== 'none' && target.dead) return; // dead player is inert
     switch (contact) {
       case 'none':
         return;
@@ -528,18 +751,18 @@ export class Level implements LevelLike {
         // a pollster mutates itself into a 'shell' on stomp — then the stomp
         // is bounce-only; likewise stomping a shell parks it, no squash
         if (e.kind !== 'shell') e.dyingT = ENEMY_DYING_FRAMES;
-        this.player.bounce(this.jumpHeld);
+        target.bounce(this.jumpHeldFor(target));
         this.emitAt('stomp', e.x, e.y);
         return;
       }
       case 'hurt':
-        this.damagePlayer(e.x);
+        this.damage(target, e.x);
         return;
       case 'kill':
-        this.kill();
+        this.kill(target);
         return;
       case 'pickup':
-        this.resolvePickup(e);
+        this.resolvePickup(e, target);
         return;
       default: {
         const _x: never = contact;
@@ -548,10 +771,10 @@ export class Level implements LevelLike {
     }
   }
 
-  /** input.jump for the current step, captured in update() for bounce height. */
-  private jumpHeld = false;
+  /** Per-body input.jump for the current step, captured in update(). */
+  private jumpHelds: boolean[] = [];
 
-  private resolvePickup(e: EntityLike): void {
+  private resolvePickup(e: EntityLike, target: PlayerLike): void {
     switch (e.kind) {
       case 'coin': {
         this.addCoin(e.x, e.y);
@@ -580,7 +803,7 @@ export class Level implements LevelLike {
         if (e.powerup === undefined) {
           throw new Error('powerup entity without a powerup kind');
         }
-        this.player.grow(e.powerup);
+        target.grow(e.powerup);
         this.emitAt('powerup-grab', e.x, e.y);
         e.alive = false;
         return;
@@ -599,12 +822,14 @@ export class Level implements LevelLike {
   // -------------------------------------------------------------------------
   // Step 5: pens & shells
   // -------------------------------------------------------------------------
-  private updatePensAndShells(input: InputState): void {
-    // throw
-    if (input.firePressed && !this.player.dead && this.player.size === 'goldpen') {
+  private updatePensAndShells(inputs: readonly InputState[]): void {
+    // throw — from whichever body pressed fire; the penMax pool is SHARED
+    for (let i = 0; i < this.players.length; i++) {
+      const p = this.players[i]!;
+      if (!inputs[i]!.firePressed || p.dead || p.bubbleT > 0 || p.size !== 'goldpen') continue;
       const live = this.ents.reduce((n, e) => n + (e.alive && e.kind === 'pen' ? 1 : 0), 0);
       if (live < PHYS.penMax) {
-        this.ents.push(spawnPen(this.player.x, this.player.y, this.player.facing));
+        this.ents.push(spawnPen(p.x, p.y, p.facing));
         this.events.push('pen-throw'); // at the player, no source entry
       }
     }
@@ -660,22 +885,30 @@ export class Level implements LevelLike {
     const boss = this.boss;
     if (!boss || !this.arena) return;
 
-    if (
-      boss.phase === 'off' &&
-      !this.player.dead &&
-      this.player.x > this.arena.x0 + BOSS_TRIGGER_DEPTH
-    ) {
-      boss.phase = 'intro';
-      this.raiseGates();
-      // 'boss-intro' is emitted by the boss itself on its first intro tick
-      // (same frame — update() below); Level only slams the gates.
-      this.emitAt('gate-slam', this.arena.x0, (this.arena.floorRow - GATE_H / 2) * TILE);
+    if (boss.phase === 'off') {
+      let engaged = false;
+      for (const p of this.players) {
+        if (this.isActive(p) && p.x > this.arena.x0 + BOSS_TRIGGER_DEPTH) {
+          engaged = true;
+          break;
+        }
+      }
+      if (engaged) {
+        boss.phase = 'intro';
+        this.raiseGates();
+        // 'boss-intro' is emitted by the boss itself on its first intro tick
+        // (same frame — update() below); Level only slams the gates.
+        this.emitAt('gate-slam', this.arena.x0, (this.arena.floorRow - GATE_H / 2) * TILE);
+      }
     }
 
     if (boss.phase === 'off') return;
 
+    // The boss, like every entity, acts on the nearest active body.
+    const target = this.nearestActive(boss.x, boss.y);
+    this.ctx.player = target;
     const contact = boss.update(this.ctx);
-    if (!this.player.dead) {
+    if (!target.dead) {
       switch (contact) {
         case 'none':
           break;
@@ -684,14 +917,14 @@ export class Level implements LevelLike {
           // stagger and emits 'boss-hit' before reporting 'stomped'. Level
           // only bounces the player and arms the pen-hit mirror stagger.
           this.bossStaggerT = BOSS_PEN_STAGGER;
-          this.player.bounce(true);
+          target.bounce(true);
           break;
         }
         case 'hurt':
-          this.damagePlayer(boss.x);
+          this.damage(target, boss.x);
           break;
         case 'kill':
-          this.kill();
+          this.kill(target);
           break;
         case 'pickup':
           throw new Error('boss reported pickup contact');
@@ -730,33 +963,34 @@ export class Level implements LevelLike {
   }
 
   // -------------------------------------------------------------------------
-  // Step 7: hazard tiles + void
+  // Step 7: hazard tiles + void — sampled per active body
   // -------------------------------------------------------------------------
   private checkHazards(): void {
-    const p = this.player;
-    if (p.dead) return;
+    for (const p of this.players) {
+      if (p.dead || p.bubbleT > 0) continue;
 
-    // void first: below the map nothing else matters
-    if (p.y > this.map.pixelH + VOID_MARGIN) {
-      this.kill();
-      return;
-    }
-
-    const xs = [p.x - p.halfW, p.x, p.x + p.halfW];
-    const ys = [p.y - p.halfH, p.y, p.y + p.halfH];
-    let spike = false;
-    let lava = false;
-    for (const px of xs) {
-      for (const py of ys) {
-        const s = this.map.solidAtPx(px, py);
-        if (s === 'spike') spike = true;
-        else if (s === 'lava') lava = true;
+      // void first: below the map nothing else matters
+      if (p.y > this.map.pixelH + VOID_MARGIN) {
+        this.kill(p);
+        continue;
       }
-    }
-    if (lava) {
-      this.kill();
-    } else if (spike) {
-      this.damagePlayer(p.x); // neutral knockback
+
+      const xs = [p.x - p.halfW, p.x, p.x + p.halfW];
+      const ys = [p.y - p.halfH, p.y, p.y + p.halfH];
+      let spike = false;
+      let lava = false;
+      for (const px of xs) {
+        for (const py of ys) {
+          const s = this.map.solidAtPx(px, py);
+          if (s === 'spike') spike = true;
+          else if (s === 'lava') lava = true;
+        }
+      }
+      if (lava) {
+        this.kill(p);
+      } else if (spike) {
+        this.damage(p, p.x); // neutral knockback
+      }
     }
   }
 
@@ -764,8 +998,8 @@ export class Level implements LevelLike {
   // Step 8: crumble tiles
   // -------------------------------------------------------------------------
   private updateCrumble(): void {
-    const p = this.player;
-    if (!p.dead && p.grounded) {
+    for (const p of this.players) {
+      if (p.dead || p.bubbleT > 0 || !p.grounded) continue;
       const footY = p.y + p.halfH + 1;
       const ty = Math.floor(footY / TILE);
       // 1px inset so flush-touching a neighbour tile does not arm it
@@ -796,13 +1030,14 @@ export class Level implements LevelLike {
   }
 
   // -------------------------------------------------------------------------
-  // Step 10: camera
+  // Step 10: camera — follows the leader (P1 in solo, exactly as before)
   // -------------------------------------------------------------------------
   private cameraTarget(): { x: number; y: number } {
+    const lead = this.leader();
     return {
-      x: clamp(this.player.x - CAMERA.anchorX, 0, Math.max(0, this.map.pixelW - VIEW_W)),
+      x: clamp(lead.x - CAMERA.anchorX, 0, Math.max(0, this.map.pixelW - VIEW_W)),
       y: clamp(
-        this.player.y - CAMERA.anchorY,
+        lead.y - CAMERA.anchorY,
         -CAMERA.overscrollTop,
         Math.max(-CAMERA.overscrollTop, this.map.pixelH - VIEW_H),
       ),

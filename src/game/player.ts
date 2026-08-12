@@ -15,6 +15,7 @@
 // ============================================================================
 
 import type {
+  CharacterId,
   GameEvent,
   InputState,
   PlayerLike,
@@ -49,6 +50,13 @@ const ONEWAY_TOL = 0.01;
 const SENSOR_INSET = 2;
 
 export class Player implements PlayerLike {
+  /** Who this body is drawn as. Solo: Level.swapCharacter toggles it in
+   *  place; co-op: fixed per slot (P1 mangiani, P2 estrada). Physics are
+   *  IDENTICAL either way — this field is sprite/palette/fiction only. */
+  character: CharacterId;
+  /** Co-op bubble countdown (see PlayerLike). Solo: always 0. The Level owns
+   *  every transition; the player itself never reads or ticks it. */
+  bubbleT = 0;
   x: number;
   y: number;
   vx = 0;
@@ -79,9 +87,10 @@ export class Player implements PlayerLike {
   /** Edge latch so one continuous skid raises 'skid' exactly once. */
   private skidLatch = false;
 
-  constructor(at: SpawnPoint) {
+  constructor(at: SpawnPoint, character: CharacterId = 'mangiani') {
     this.x = at.x;
     this.y = at.y;
+    this.character = character;
   }
 
   // -------------------------------------------------------------------------

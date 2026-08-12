@@ -11,6 +11,7 @@ import type {
   BossLike,
   BossPhase,
   CameraState,
+  CharacterId,
   EnemyKind,
   EntityKind,
   EntityLike,
@@ -21,7 +22,7 @@ import type {
   ThemeId,
   TileKind,
 } from '../core/types.ts';
-import { TILE, VIEW_H, VIEW_W } from '../core/constants.ts';
+import { SOLIDITY, TILE, VIEW_H, VIEW_W } from '../core/constants.ts';
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -192,6 +193,242 @@ const GROUND_FLAVOR: Record<ThemeId, (a: TileArgs, exposed: boolean) => void> = 
   },
 };
 
+// ---------------------------------------------------------------------------
+// Hazard integration — spikes GROW FROM the terrain, never float (playtest
+// law). Every spike tile probes its neighbours (spikeSeat) and seats itself
+// on whatever solid it touches: floor spikes root DOWN into their support,
+// ceiling spikes root UP, wall spikes root SIDEWAYS, and a spike with no
+// solid neighbour at all gets a riveted anchor plate so nothing free-floats.
+// All drawing happens in a canonical points-up frame (origin = tile centre,
+// +y toward the support) rotated onto the actual seat, so each theme flavor
+// works in all four orientations for free.
+// The 2-3px root flare that overlaps the SUPPORT tile lives in a second
+// overlay pass (TILE_OVERLAY, drawn by drawTiles after every base tile): the
+// main pass paints rows top-to-bottom, so a floor spike's support lands AFTER
+// the spike and would bury any overlap drawn in the first pass.
+// ---------------------------------------------------------------------------
+
+interface SpikeSeat {
+  /** Rotates the canonical points-up drawing onto the actual support. */
+  rot: number;
+  /** False = no solid neighbour anywhere: anchor-plate fallback. */
+  anchored: boolean;
+  /** A same-kind spike continues past the canonical left/right edge — runs
+   *  share one base band; seam caps appear only at the run's real ends. */
+  leftSame: boolean;
+  rightSame: boolean;
+}
+
+function spikeSeat(map: LevelLike['map'], tx: number, ty: number): SpikeSeat {
+  const solid = (dx: number, dy: number): boolean =>
+    SOLIDITY[map.tileAt(tx + dx, ty + dy)] === 'solid';
+  const same = (dx: number, dy: number): boolean => map.tileAt(tx + dx, ty + dy) === 'spike';
+  // floor first (the normal case), then ceiling, then either wall; the
+  // canonical-left/right map directions follow the rotation (see rot math).
+  if (solid(0, 1)) return { rot: 0, anchored: true, leftSame: same(-1, 0), rightSame: same(1, 0) };
+  if (solid(0, -1)) return { rot: Math.PI, anchored: true, leftSame: same(1, 0), rightSame: same(-1, 0) };
+  if (solid(-1, 0)) return { rot: Math.PI / 2, anchored: true, leftSame: same(0, -1), rightSame: same(0, 1) };
+  if (solid(1, 0)) return { rot: -Math.PI / 2, anchored: true, leftSame: same(0, 1), rightSame: same(0, -1) };
+  return { rot: 0, anchored: false, leftSame: same(-1, 0), rightSame: same(1, 0) };
+}
+
+interface SpikeArgs {
+  ctx: Ctx;
+  /** tileHash(tx,ty): per-tile deterministic jitter. */
+  hash: number;
+  frame: number;
+  leftSame: boolean;
+  rightSame: boolean;
+}
+
+/** Per-tooth deterministic jitter in [0,1) derived from the tile hash. */
+function toothJitter(hash: number, i: number): number {
+  return (hash * 31 + i * 0.618034) % 1;
+}
+
+/** Tooth centre x for n evenly spaced teeth — adjacent tiles continue the
+ *  same rhythm, so a spike run reads as one long trap. */
+function toothX(n: number, i: number): number {
+  return -8 + (16 / n) * (i + 0.5);
+}
+
+/** Tooth height, jittered 12..14.5px so a run is not a repeated comb. */
+function toothH(hash: number, i: number): number {
+  return 12 + toothJitter(hash, i) * 2.5;
+}
+
+/** Canonical teeth row: n points rising from the base line (y=+6, i.e. under
+ *  the base band that gets drawn OVER their roots) toward the tile top.
+ *  Outline = silhouette UNDERLAY (like the player sprite), never a stroke: a
+ *  stroked outline on a tall thin triangle converges above the midpoint and
+ *  eats the fill from the tip down — the teeth read as black bristles
+ *  (rounds 1-2 finding). The underlay keeps the fill full-width to the tip. */
+function teethRow(ctx: Ctx, hash: number, n: number, fill: string, outline: string, bob = 0): void {
+  const hw = 16 / n / 2 - 0.4;
+  for (let i = 0; i < n; i++) {
+    const cxT = toothX(n, i);
+    const h = toothH(hash, i);
+    tri(ctx, cxT - hw - 0.9, 6.9 + bob, cxT + hw + 0.9, 6.9 + bob, cxT, 6 - h - 1.4 + bob, outline);
+    tri(ctx, cxT - hw, 6 + bob, cxT + hw, 6 + bob, cxT, 6 - h + bob, fill);
+  }
+}
+
+/** Base band across the FULL tile width (runs share it seamlessly); darker
+ *  caps only where the run actually ends. Covers the teeth roots, so the
+ *  points read as emerging from the band, and the band from the terrain. */
+function baseBand(
+  ctx: Ctx, y0: number, h: number, fill: string, cap: string,
+  s: { leftSame: boolean; rightSame: boolean },
+): void {
+  ctx.fillStyle = fill;
+  ctx.fillRect(-8, y0, 16, h);
+  ctx.fillStyle = cap;
+  if (!s.leftSame) ctx.fillRect(-8, y0, 2, h);
+  if (!s.rightSame) ctx.fillRect(6, y0, 2, h);
+}
+
+interface SpikeStyle {
+  /** Teeth + base band, canonical frame; stays inside the tile cell. */
+  body: (s: SpikeArgs) => void;
+  /** Root flare drawn INTO the support tile (+8..~+11) by the overlay pass —
+   *  the part that makes the trap read as grown from the terrain. */
+  root: (s: SpikeArgs) => void;
+}
+
+const SPIKE_STYLE: Record<ThemeId, SpikeStyle> = {
+  // tax-form paper spikes STAPLED to the terrain: deadly paperwork, filed
+  meadow: {
+    body: (s) => {
+      const { ctx, hash } = s;
+      teethRow(ctx, hash, 2, '#f2efe4', '#9a958c');
+      for (const i of [0, 1] as const) {
+        const cxT = toothX(2, i);
+        ctx.fillStyle = '#c22e2e';
+        ctx.fillRect(cxT - 1.5, -1, 3, 1); // TOTAL DUE line
+        ctx.fillStyle = '#b8b2a6';
+        ctx.fillRect(cxT - 1.5, 1, 3, 1); // fine print
+        ctx.fillRect(cxT - 2.5, 3, 5, 1);
+      }
+      baseBand(ctx, 4, 4, '#e6d9a8', '#b5a273', s);
+      ctx.fillStyle = '#b5a273'; // manila fold line
+      ctx.fillRect(-8, 4, 16, 1);
+      ctx.fillStyle = '#4a4453'; // the staples
+      for (const sx of [-4.5, 3.5]) {
+        ctx.fillRect(sx - 1.5, 5, 3, 1);
+        ctx.fillRect(sx - 1.5, 5, 1, 2.5);
+        ctx.fillRect(sx + 0.5, 5, 1, 2.5);
+      }
+    },
+    root: (s) => {
+      const { ctx } = s;
+      baseBand(ctx, 8, 3, '#6b4326', '#54341d', s); // pressed-earth seam
+      ctx.fillStyle = '#422814'; // staple legs biting into the terrain
+      for (const sx of [-4.5, 3.5]) {
+        ctx.fillRect(sx - 1.5, 8, 1, 2);
+        ctx.fillRect(sx + 0.5, 8, 1, 2);
+      }
+    },
+  },
+
+  // rusted iron spikes sweating rust into the masonry they grew from
+  sewer: {
+    body: (s) => {
+      const { ctx, hash } = s;
+      teethRow(ctx, hash, 3, '#9aa0ad', OUT);
+      for (let i = 0; i < 3; i++) {
+        const cxT = toothX(3, i);
+        const j = toothJitter(hash, i + 3);
+        ctx.fillStyle = '#8a5430'; // rust creeping up from the roots
+        ctx.fillRect(cxT - 1, 2 - j * 2, 2, 3);
+        ctx.fillStyle = '#74452a';
+        ctx.fillRect(cxT - 1, 4, 2, 2);
+      }
+      baseBand(ctx, 4, 4, '#495061', '#333846', s); // corroded mounting bar
+      ctx.fillStyle = '#6d7480'; // worn top edge
+      ctx.fillRect(-8, 4, 16, 1);
+    },
+    root: (s) => {
+      const { ctx, hash } = s;
+      baseBand(ctx, 8, 3, '#333846', '#262b36', s);
+      ctx.fillStyle = '#7c4a28'; // drip stains running off the roots
+      for (const [dx, k] of [[-5, 0], [0, 1], [4, 2]] as const) {
+        ctx.fillRect(dx, 10, 1.5, 2 + toothJitter(hash, k + 7) * 4);
+      }
+    },
+  },
+
+  // card-shredder blades chewing out of a chrome slot bolted to the felt
+  casino: {
+    body: (s) => {
+      const { ctx, hash, frame } = s;
+      const bob = Math.sin(frame / 5 + hash * 6.283); // the shredder CHEWS
+      teethRow(ctx, hash, 3, '#c9ccd8', OUT, bob);
+      ctx.fillStyle = '#f2f2f2'; // shine on each blade's leading edge
+      for (let i = 0; i < 3; i++) {
+        ctx.fillRect(toothX(3, i) - 0.5, 6 - toothH(hash, i) * 0.7 + bob, 1, 5);
+      }
+      // chrome slot housing: blades vanish into a dark slit, not into air
+      baseBand(ctx, 3, 5, '#8a8d99', '#565a68', s);
+      ctx.fillStyle = '#c9ccd8'; // brushed top edge
+      ctx.fillRect(-8, 3, 16, 1);
+      ctx.fillStyle = OUT; // the slit itself, continued across a run
+      const sx0 = s.leftSame ? -8 : -7;
+      const sx1 = s.rightSame ? 8 : 7;
+      ctx.fillRect(sx0, 4.5, sx1 - sx0, 1.5);
+      if (hash < 0.6) { // shredded-card confetti stuck at the slot
+        ctx.fillStyle = '#f5f0e6';
+        ctx.fillRect(-6 + hash * 8, 2, 2, 1);
+        ctx.fillStyle = '#c22e2e';
+        ctx.fillRect(2 - hash * 4, 2.2, 1.5, 1);
+      }
+    },
+    root: (s) => {
+      const { ctx } = s;
+      baseBand(ctx, 8, 3, '#565a68', '#3f4450', s); // mounting flange
+      disc(ctx, -5.5, 9.4, 0.9, '#f2c14e'); // gold house screws
+      disc(ctx, 5.5, 9.4, 0.9, '#f2c14e');
+    },
+  },
+
+  // blackened iron spikes forged into the stone, embers still breathing
+  castle: {
+    body: (s) => {
+      const { ctx, hash, frame } = s;
+      teethRow(ctx, hash, 3, '#3a3d4d', OUT);
+      ctx.fillStyle = '#6d7480'; // cold edge highlight
+      for (let i = 0; i < 3; i++) {
+        ctx.fillRect(toothX(3, i) - 0.5, 8 - toothH(hash, i), 1, 5);
+      }
+      baseBand(ctx, 4, 4, '#26232f', '#1c1a24', s); // scorched collar
+      const g = 0.3 + 0.2 * Math.sin(frame / 8 + hash * 6.283);
+      ctx.fillStyle = `rgba(255,123,45,${g.toFixed(3)})`; // breathing embers
+      ctx.fillRect(-8, 3, 16, 3);
+      if ((frame + Math.floor(hash * 97)) % 34 < 17) {
+        disc(ctx, -4 + hash * 8, 4.5, 1, '#ff8c2e');
+        disc(ctx, 5 - hash * 9, 5.5, 0.8, '#ffd23e');
+      }
+    },
+    root: (s) => {
+      const { ctx, hash, frame } = s;
+      baseBand(ctx, 8, 3, '#1c1a24', OUT, s);
+      const g = 0.25 + 0.15 * Math.sin(frame / 8 + hash * 6.283);
+      ctx.fillStyle = `rgba(255,123,45,${g.toFixed(3)})`; // glow over the seam
+      ctx.fillRect(-8, 7, 16, 4);
+    },
+  },
+};
+
+/** Isolated spikes (no solid neighbour anywhere) still never free-float: a
+ *  riveted anchor plate bolts the trap onto something visible. Rare by
+ *  design after the placement audit — but never invisible, never floating. */
+function anchorPlate(ctx: Ctx): void {
+  orect(ctx, -8, 3, 16, 5, '#8a8d99');
+  for (const rx of [-5.5, 0, 5.5]) {
+    disc(ctx, rx, 5.5, 1.2, '#c9ccd8');
+    disc(ctx, rx + 0.4, 5.9, 0.5, '#565a68');
+  }
+}
+
 const TILE_DRAW: Record<TileKind, TileDraw> = {
   empty: () => {},
 
@@ -293,16 +530,19 @@ const TILE_DRAW: Record<TileKind, TileDraw> = {
   },
 
   spike: (a) => {
-    // tax-form spikes: pointed paperwork, the deadliest instrument known
-    const { ctx, x, y } = a;
-    for (const ox of [0, 8]) {
-      tri(ctx, x + ox + 1, y + TILE, x + ox + 8, y + TILE, x + ox + 4.5, y + 2, '#f2efe4', '#9a958c');
-      ctx.fillStyle = '#c22e2e';
-      ctx.fillRect(x + ox + 3, y + 7, 3, 1); // TOTAL DUE line
-      ctx.fillStyle = '#b8b2a6';
-      ctx.fillRect(x + ox + 3, y + 9, 3, 1); // fine print
-      ctx.fillRect(x + ox + 2, y + 11, 5, 1);
-    }
+    // hazard law: spikes grow FROM the terrain — seat on the solid neighbour
+    // (spikeSeat), theme flavor in SPIKE_STYLE, root flare in TILE_OVERLAY.
+    const { ctx, x, y, tx, ty } = a;
+    const seat = spikeSeat(a.level.map, tx, ty);
+    ctx.save();
+    ctx.translate(x + TILE / 2, y + TILE / 2);
+    ctx.rotate(seat.rot);
+    SPIKE_STYLE[a.theme].body({
+      ctx, hash: tileHash(tx, ty), frame: a.frame,
+      leftSame: seat.leftSame, rightSame: seat.rightSame,
+    });
+    if (!seat.anchored) anchorPlate(ctx);
+    ctx.restore();
   },
 
   lava: (a) => {
@@ -341,6 +581,57 @@ const TILE_DRAW: Record<TileKind, TileDraw> = {
   },
 };
 
+/** Integration overlays, drawn in a SECOND pass after every base tile: the
+ *  bits of a hazard that must paint ON TOP of a neighbouring tile (spike
+ *  roots flaring into their support, lava lapping up a wall). Exhaustive
+ *  with explicit nulls, house style — a new tile kind must declare its
+ *  overlay even when that declaration is "none". */
+const TILE_OVERLAY: Record<TileKind, TileDraw | null> = {
+  empty: null,
+  ground: null,
+  bedrock: null,
+  brick: null,
+  qblock: null,
+  usedblock: null,
+  oneway: null,
+  pipe: null,
+  crumble: null,
+
+  spike: (a) => {
+    const seat = spikeSeat(a.level.map, a.tx, a.ty);
+    if (!seat.anchored) return; // the anchor plate needs no root
+    const { ctx } = a;
+    ctx.save();
+    ctx.translate(a.x + TILE / 2, a.y + TILE / 2);
+    ctx.rotate(seat.rot);
+    SPIKE_STYLE[a.theme].root({
+      ctx, hash: tileHash(a.tx, a.ty), frame: a.frame,
+      leftSame: seat.leftSame, rightSame: seat.rightSame,
+    });
+    ctx.restore();
+  },
+
+  lava: (a) => {
+    // the surface row's glow lip laps 2-3px up any solid neighbour's wall so
+    // the pool reads as HELD by the terrain; sub-surface stays full-cell.
+    const { ctx, x, y, tx, ty, frame } = a;
+    const m = a.level.map;
+    if (m.tileAt(tx, ty - 1) === 'lava') return;
+    for (const side of [-1, 1] as const) {
+      if (SOLIDITY[m.tileAt(tx + side, ty)] !== 'solid') continue;
+      const wx = side === -1 ? x : x + TILE; // the wall face, screen px
+      const lap = 2 + Math.sin(frame / 8 + tx * 1.9 + side); // 1..3px climb
+      ctx.fillStyle = '#ff8c2e'; // molten lick riding up the wall
+      ctx.fillRect(wx - 3, y - lap, 6, lap + 5);
+      ctx.fillStyle = '#ffd23e'; // hot core hugging the wall face
+      ctx.fillRect(side === -1 ? wx - 3 : wx + 1, y - lap + 1, 2, lap + 2);
+      const g = 0.3 + 0.15 * Math.sin(frame / 6 + tx + side);
+      ctx.fillStyle = `rgba(255,140,46,${g.toFixed(3)})`; // heat sheen above
+      ctx.fillRect(side === -1 ? wx - 3 : wx, y - lap - 4, 3, 4);
+    }
+  },
+};
+
 export function drawTiles(ctx: Ctx, level: LevelLike, cam: CameraState): void {
   const map = level.map;
   const theme = level.def.theme;
@@ -361,6 +652,18 @@ export function drawTiles(ctx: Ctx, level: LevelLike, cam: CameraState): void {
       const fn = TILE_DRAW[k] as TileDraw | undefined;
       if (fn === undefined) throw new Error(`painter: no tile draw for kind '${String(k)}'`);
       fn({ ctx, x: tx * TILE - cx, y: ty * TILE - cy, tx, ty, theme, pal, frame, level });
+    }
+  }
+  // Integration pass: hazard overlaps that must paint OVER neighbour tiles.
+  // Row order draws a floor spike's support AFTER the spike — roots drawn in
+  // the first pass would be buried under it; this pass runs once everything
+  // is down. Same culling window, still before fx/entities in scene order.
+  for (let ty = ty0; ty <= ty1; ty++) {
+    for (let tx = tx0; tx <= tx1; tx++) {
+      const k = map.tileAt(tx, ty);
+      if (k === 'empty') continue;
+      const ov = TILE_OVERLAY[k];
+      if (ov !== null) ov({ ctx, x: tx * TILE - cx, y: ty * TILE - cy, tx, ty, theme, pal, frame, level });
     }
   }
 }
@@ -1704,6 +2007,402 @@ function estradaSprite(ctx: Ctx, pal: EstradaPal, big: boolean, pose: Pose, ink:
   else estradaSmall(ctx, pal, pose, ink);
 }
 
+// ---------------------------------------------------------------------------
+// MANGIANI — the honest worker (P1's default; Estrada morphs in on 'swap').
+// SAME skeleton, poses and clocks as the Estrada rig; only identity differs:
+// GREEN cap with the white 'M' disc, ~2px taller at every size, lankier
+// (1px narrower limbs), big honest ROUND eyes (centered pupil + highlight —
+// the anti-smug), bigger rounder nose, brown swept fringe + sideburn, NO
+// moustache, green shirt sleeves over the darker blue bib, no notary stamp
+// (he has nothing to certify). Palette sampled from cast.ts (mangGreen /
+// mangDark / mangBlue / mangHair).
+// ---------------------------------------------------------------------------
+
+const M_HAIR = '#5a3a1c';
+/** Nose highlight dot — the honest shine. */
+const M_NOSE_HL = '#ffe8d2';
+
+const MANGIANI_PAL: Record<PlayerSize, EstradaPal> = {
+  small: {
+    cap: '#2f9e44', capDark: '#1f6f30',
+    shirt: '#2f9e44', shirtDark: '#227a35',
+    bib: '#24427c', bibDark: '#182f5e',
+    glove: '#f4f0e6', shoe: '#6b3d1e',
+    button: '#f6c94b', discE: '#1f6f30',
+  },
+  certified: {
+    cap: '#2f9e44', capDark: '#1f6f30',
+    shirt: '#2f9e44', shirtDark: '#227a35',
+    bib: '#24427c', bibDark: '#182f5e',
+    glove: '#f4f0e6', shoe: '#6b3d1e',
+    button: '#f6c94b', discE: '#1f6f30',
+  },
+  goldpen: {
+    // white-and-gold swap; the cap stays GREEN — the cap IS the identity.
+    cap: '#2f9e44', capDark: '#1f6f30',
+    shirt: '#f4f0e6', shirtDark: '#cfc4ab',
+    bib: '#e0aa2f', bibDark: '#a87c1e',
+    glove: '#ffffff', shoe: '#8a6a1e',
+    button: '#2f9e44', discE: '#1f6f30',
+  },
+};
+
+/** Hand-pixeled 'M' (blocky, reads at disc scale). */
+function markM(ctx: Ctx, ink: boolean, x: number, y: number, s: number, c: string): void {
+  if (ink) return; // the disc itself already carries the silhouette
+  ctx.fillStyle = c;
+  ctx.fillRect(x - 2.2 * s, y - 2.6 * s, 1.2 * s, 5.2 * s); // left leg
+  ctx.fillRect(x + 1.0 * s, y - 2.6 * s, 1.2 * s, 5.2 * s); // right leg
+  ctx.fillRect(x - 1.2 * s, y - 2.6 * s, 1.0 * s, 1.2 * s); // shoulders
+  ctx.fillRect(x + 0.2 * s, y - 2.6 * s, 1.0 * s, 1.2 * s);
+  ctx.fillRect(x - 0.6 * s, y - 1.6 * s, 1.2 * s, 1.8 * s); // center dip
+}
+
+/** Small Mangiani, facing +x, feet at y=0. ~22px tall (2 more than Estrada). */
+function mangianiSmall(ctx: Ctx, pal: EstradaPal, pose: Pose, ink: boolean): void {
+  const { R, D } = inkable(ctx, ink);
+  const out = pose.kind === 'fall' || pose.kind === 'skid';
+  const u = pose.breathe;
+
+  // back arm (lanky: 2px wide)
+  if (pose.kind === 'jump') {
+    R(-8.3, -18.5, 2, 6, pal.shirtDark);
+    D(-7.3, -19.5, 1.7, pal.glove);
+  } else if (out) {
+    R(-8.8, -9, 3, 2, pal.shirtDark);
+    D(-9, -7.8, 1.7, pal.glove);
+  } else {
+    R(-6.8, -8.5 + pose.arm, 2, 4.5, pal.shirtDark);
+    D(-5.8, -3.6 + pose.arm, 1.6, pal.glove);
+  }
+
+  // torso: the darker blue bib, gold buttons — no stamp, nothing to certify
+  R(-5, -8, 10, 5.5, pal.bib);
+  R(-5, -8, 2, 5.5, pal.bibDark);
+  R(-3, -7.2, 1.5, 1.5, pal.button);
+  R(1.5, -7.2, 1.5, 1.5, pal.button);
+
+  // legs / shoes
+  if (pose.kind === 'jump') {
+    R(-4, -4.5, 4, 2.5, pal.shoe); // tucked
+    R(0.5, -4.5, 4, 2.5, pal.shoe);
+  } else if (pose.kind === 'fall') {
+    R(-5, -3.5, 4, 2.5, pal.shoe); // dangling
+    R(1.5, -3, 4, 2.5, pal.shoe);
+  } else {
+    R(-6 - pose.leg, -2.5, 4.5, 2.5, pal.shoe);
+    R(1.5 + pose.leg, -2.5, 4.5, 2.5, pal.shoe);
+  }
+
+  // head — taller face, honest kit
+  R(-7, -17 + u, 14, 9, E_SKIN);
+  R(-7, -17 + u, 2, 9, E_SKIN_DK);
+  R(-7, -17 + u, 2, 6, M_HAIR); // sideburn
+  R(-5, -17 + u, 9, 1.6, M_HAIR); // swept fringe under the cap
+  D(7.8, -12 + u, 2.9, E_NOSE); // big round nose
+  D(6.6, -13.1 + u, 0.8, M_NOSE_HL);
+  D(3.2, -13.6 + u, 2.6, '#ffffff'); // big honest ROUND eye
+  D(3.8, -13.3 + u, 1.2, OUT); // centered pupil
+  D(2.4, -14.5 + u, 0.7, '#ffffff'); // highlight
+  R(1.5, -9.8 + u, 8, 2.5, M_HAIR); // full honest moustache — broad and soft
+  R(0.8, -9.2 + u, 1.2, 1.6, M_HAIR); // soft droop, back edge
+  R(9.2, -9.2 + u, 1.2, 1.6, M_HAIR); // soft droop, front edge
+
+  // cap: GREEN crown + white 'M' disc + brim toward facing
+  ctx.save();
+  if (pose.kind === 'skid') {
+    ctx.translate(0.8, -18 + u);
+    ctx.rotate(0.2);
+    ctx.translate(0, 18 - u);
+  }
+  R(-7.5, -21 + u, 15, 4.5, pal.cap);
+  R(-7.5, -21 + u, 3, 4.5, pal.capDark);
+  R(3, -18 + u, 7.5, 2, pal.cap); // brim
+  R(3, -16.4 + u, 7.5, 0.8, pal.capDark);
+  D(0.5, -19.3 + u, 3.6, '#ffffff');
+  markM(ctx, ink, 0.5, -19.3 + u, 1.0, pal.discE);
+  ctx.restore();
+
+  // front arm
+  if (pose.kind === 'jump') {
+    R(6.3, -18.5, 2, 6, pal.shirt);
+    D(7.3, -19.5, 1.7, pal.glove);
+  } else if (out) {
+    R(5.8, -9, 3, 2, pal.shirt);
+    D(9, -7.8, 1.7, pal.glove);
+  } else {
+    R(4.8, -8.5 - pose.arm, 2, 4.5, pal.shirt);
+    D(5.8, -3.6 - pose.arm, 1.6, pal.glove);
+  }
+}
+
+/** Certified/goldpen Mangiani, facing +x, feet at y=0. ~32px tall. */
+function mangianiBig(ctx: Ctx, pal: EstradaPal, pose: Pose, ink: boolean): void {
+  const { R, D } = inkable(ctx, ink);
+  const out = pose.kind === 'fall' || pose.kind === 'skid';
+  const u = pose.breathe;
+
+  // back arm
+  if (pose.kind === 'jump') {
+    R(-9.6, -28, 2.5, 7.5, pal.shirtDark);
+    D(-8.2, -29, 2, pal.glove);
+  } else if (out) {
+    R(-11, -15.5, 3.5, 2.5, pal.shirtDark);
+    D(-11.2, -14, 2, pal.glove);
+  } else {
+    R(-8.6, -15.5 + pose.arm, 2.5, 7, pal.shirtDark);
+    D(-7.2, -7.5 + pose.arm, 1.9, pal.glove);
+  }
+
+  // legs (lanky) + shoes
+  if (pose.kind === 'jump') {
+    R(-4.8, -7, 3.5, 3, pal.bibDark); // tucked
+    R(1.3, -7, 3.5, 3, pal.bib);
+    R(-5.5, -5, 5, 2.5, pal.shoe);
+    R(1.3, -4.5, 5, 2.5, pal.shoe);
+  } else if (pose.kind === 'fall') {
+    R(-5.2, -6, 3.5, 3.5, pal.bibDark); // dangling
+    R(2.2, -5.5, 3.5, 3, pal.bib);
+    R(-6.5, -3, 5.5, 2.5, pal.shoe);
+    R(2.2, -2.5, 5.5, 2.5, pal.shoe);
+  } else {
+    R(-5.2 - pose.leg, -5.5, 3.5, 3.5, pal.bibDark);
+    R(1.7 + pose.leg, -5.5, 3.5, 3.5, pal.bib);
+    R(-6.5 - pose.leg, -2.5, 5.5, 2.5, pal.shoe);
+    R(1.7 + pose.leg, -2.5, 6, 2.5, pal.shoe);
+  }
+
+  // torso: green shirt chest, FULL darker-blue bib + straps, gold buttons
+  R(-7, -18, 14, 4, pal.shirt);
+  R(-7, -18, 3, 4, pal.shirtDark);
+  R(-6, -14.5, 12, 9, pal.bib);
+  R(-6, -14.5, 2.5, 9, pal.bibDark);
+  R(-5, -17.5, 2, 3.5, pal.bib); // straps
+  R(3, -17.5, 2, 3.5, pal.bib);
+  D(-3.5, -12.8, 1.3, pal.button);
+  D(3.5, -12.8, 1.3, pal.button);
+
+  // head
+  R(-8, -26 + u, 16, 10, E_SKIN);
+  R(-8, -26 + u, 2.5, 10, E_SKIN_DK);
+  R(-8, -26 + u, 2.5, 7, M_HAIR); // sideburn
+  R(-5.5, -26 + u, 11, 2, M_HAIR); // swept fringe
+  R(3, -24 + u, 2.5, 1, M_HAIR); // stray honest tuft
+  D(8.7, -20 + u, 3.4, E_NOSE); // big round nose
+  D(7.3, -21.3 + u, 0.9, M_NOSE_HL);
+  D(3.4, -21.8 + u, 3.1, '#ffffff'); // big honest ROUND eye
+  D(4.1, -21.4 + u, 1.4, OUT); // centered pupil
+  D(2.4, -22.9 + u, 0.8, '#ffffff'); // highlight
+  R(2, -17.6 + u, 8.5, 2.4, M_HAIR); // full honest moustache
+  R(1.2, -16.9 + u, 1.4, 1.7, M_HAIR); // soft droops
+  R(10.1, -16.9 + u, 1.4, 1.7, M_HAIR);
+
+  // cap
+  ctx.save();
+  if (pose.kind === 'skid') {
+    ctx.translate(1, -28 + u);
+    ctx.rotate(0.2);
+    ctx.translate(0, 28 - u);
+  }
+  R(-8.5, -31.5 + u, 17, 5.5, pal.cap);
+  R(-7, -32.5 + u, 14, 1.5, pal.cap); // crown rounding
+  R(-8.5, -31.5 + u, 3.5, 5.5, pal.capDark);
+  R(4, -27 + u, 8.5, 2.2, pal.cap); // brim
+  R(4, -25.2 + u, 8.5, 0.9, pal.capDark);
+  D(0.5, -29 + u, 4.2, '#ffffff');
+  markM(ctx, ink, 0.5, -29 + u, 1.15, pal.discE);
+  ctx.restore();
+
+  // front arm
+  if (pose.kind === 'jump') {
+    R(7.1, -28, 2.5, 7.5, pal.shirt);
+    D(8.4, -29, 2, pal.glove);
+  } else if (out) {
+    R(7.5, -15.5, 3.5, 2.5, pal.shirt);
+    D(11.2, -14, 2, pal.glove);
+  } else {
+    R(6.1, -15.5 - pose.arm, 2.5, 7, pal.shirt);
+    D(7.4, -7.5 - pose.arm, 1.9, pal.glove);
+  }
+}
+
+/** Big-size Mangiani duck: proper squat, cap low. ~19px tall. */
+function mangianiDuck(ctx: Ctx, pal: EstradaPal, ink: boolean): void {
+  const { R, D } = inkable(ctx, ink);
+  R(-6, -5.5, 12, 3.3, pal.bib);
+  R(-6, -5.5, 2, 3.3, pal.bibDark);
+  R(-7.5, -2.4, 5.5, 2.4, pal.shoe);
+  R(2.2, -2.4, 5.5, 2.4, pal.shoe);
+  R(-7.5, -13.5, 15, 8, E_SKIN);
+  R(-7.5, -13.5, 2, 8, E_SKIN_DK);
+  R(-7.5, -13.5, 2, 5, M_HAIR);
+  R(-5.5, -13.5, 10, 1.8, M_HAIR); // fringe
+  D(8, -9.5, 3, E_NOSE);
+  D(6.8, -10.6, 0.8, M_NOSE_HL);
+  D(3.2, -11, 2.6, '#ffffff');
+  D(3.8, -10.7, 1.2, OUT);
+  D(2.4, -11.8, 0.7, '#ffffff');
+  R(2.2, -7.2, 7, 2, M_HAIR); // full honest moustache
+  // cap pulled LOW
+  R(-8, -18.5, 16, 5, pal.cap);
+  R(-6.5, -19.5, 13, 1.5, pal.cap);
+  R(-8, -18.5, 3, 5, pal.capDark);
+  R(3.5, -14, 8, 2, pal.cap);
+  R(3.5, -12.4, 8, 0.8, pal.capDark);
+  D(0.5, -16, 3.7, '#ffffff');
+  markM(ctx, ink, 0.5, -16, 1.0, pal.discE);
+  D(-7.8, -3, 1.9, pal.glove); // gloves braced at the sides
+  D(8, -3, 1.9, pal.glove);
+}
+
+/** KO'd Mangiani: faces the camera — X-eyes, arms up, classic launch pose. */
+function mangianiDead(ctx: Ctx, pal: EstradaPal, big: boolean, ink: boolean): void {
+  const { R, D } = inkable(ctx, ink);
+  if (big) {
+    R(-7.5, -2.5, 5.5, 2.5, pal.shoe); // legs splayed
+    R(2, -2.5, 5.5, 2.5, pal.shoe);
+    R(-5.2, -5.5, 3.5, 3.5, pal.bibDark);
+    R(1.7, -5.5, 3.5, 3.5, pal.bib);
+    R(-7, -18, 14, 4, pal.shirt);
+    R(-6, -14.5, 12, 9, pal.bib);
+    D(-3.5, -12.8, 1.3, pal.button);
+    D(3.5, -12.8, 1.3, pal.button);
+    R(-9.6, -27, 2.5, 7.5, pal.shirtDark); // arms thrown up
+    R(7.1, -27, 2.5, 7.5, pal.shirt);
+    D(-8.2, -28.5, 2, pal.glove);
+    D(8.2, -28.5, 2, pal.glove);
+    R(-8, -26, 16, 10, E_SKIN);
+    R(-8, -26, 2, 7, M_HAIR); // both sideburns: full-face view
+    R(6, -26, 2, 7, M_HAIR);
+    R(-5.5, -26, 11, 2, M_HAIR); // fringe
+    D(0.5, -20.5, 3.2, E_NOSE);
+    D(-0.8, -21.7, 0.9, M_NOSE_HL);
+    R(-4, -17.8, 9, 2.3, M_HAIR); // the honest moustache, even in defeat
+    R(-4.9, -17.1, 1.3, 1.7, M_HAIR);
+    R(4.6, -17.1, 1.3, 1.7, M_HAIR);
+    R(-8.5, -31.5, 17, 5.5, pal.cap);
+    R(-7, -32.5, 14, 1.5, pal.cap);
+    R(-8, -26.6, 16, 1.1, pal.capDark); // brim edge-on
+    D(0.5, -29, 4.2, '#ffffff');
+    markM(ctx, ink, 0.5, -29, 1.15, pal.discE);
+    if (!ink) {
+      xEye(ctx, -3.8, -22.5, 2.3);
+      xEye(ctx, 5, -22.5, 2.3);
+    }
+  } else {
+    R(-6, -2, 4.5, 2, pal.shoe);
+    R(1.5, -2, 4.5, 2, pal.shoe);
+    R(-5, -8, 10, 5.5, pal.bib);
+    R(-3, -7.2, 1.5, 1.5, pal.button);
+    R(1.5, -7.2, 1.5, 1.5, pal.button);
+    R(-8.3, -17.5, 2, 5.5, pal.shirtDark);
+    R(6.3, -17.5, 2, 5.5, pal.shirt);
+    D(-7.3, -18.5, 1.7, pal.glove);
+    D(7.3, -18.5, 1.7, pal.glove);
+    R(-7, -17, 14, 9, E_SKIN);
+    R(-7, -17, 1.8, 6, M_HAIR);
+    R(5.2, -17, 1.8, 6, M_HAIR);
+    R(-5, -17, 10, 1.6, M_HAIR);
+    D(0.5, -12, 2.7, E_NOSE);
+    R(-3, -9.8, 8, 2, M_HAIR); // honest moustache
+    R(-7.5, -21, 15, 4.5, pal.cap);
+    R(-7, -16.8, 14, 1, pal.capDark);
+    D(0.5, -19.3, 3.6, '#ffffff');
+    markM(ctx, ink, 0.5, -19.3, 1.0, pal.discE);
+    if (!ink) {
+      xEye(ctx, -3.5, -14, 1.9);
+      xEye(ctx, 4.5, -14, 1.9);
+    }
+  }
+}
+
+function mangianiSprite(ctx: Ctx, pal: EstradaPal, big: boolean, pose: Pose, ink: boolean): void {
+  if (pose.kind === 'dead') mangianiDead(ctx, pal, big, ink);
+  else if (pose.kind === 'duck' && big) mangianiDuck(ctx, pal, ink);
+  else if (big) mangianiBig(ctx, pal, pose, ink);
+  else mangianiSmall(ctx, pal, pose, ink);
+}
+
+// ---------------------------------------------------------------------------
+// Character dispatch — exhaustive Record<CharacterId, rig>; a new character
+// id in types.ts refuses to compile until it gets a rig here.
+// ---------------------------------------------------------------------------
+
+interface CharRig {
+  pal: Record<PlayerSize, EstradaPal>;
+  sprite: (ctx: Ctx, pal: EstradaPal, big: boolean, pose: Pose, ink: boolean) => void;
+  /** Visual height in px (for the halo/bubble framing). */
+  visH: (big: boolean) => number;
+  /** Cap-disc letter painter (shared with the bubble mini-face). */
+  mark: (ctx: Ctx, ink: boolean, x: number, y: number, s: number, c: string) => void;
+  /** Bubble mini-face eye style. */
+  eyes: 'smug' | 'round';
+}
+
+const CHAR_RIG: Record<CharacterId, CharRig> = {
+  estrada: { pal: PLAYER_PAL, sprite: estradaSprite, visH: (b) => (b ? 30 : 20), mark: markE, eyes: 'smug' },
+  mangiani: { pal: MANGIANI_PAL, sprite: mangianiSprite, visH: (b) => (b ? 32 : 22), mark: markM, eyes: 'round' },
+};
+
+/** Co-op bubble: the body is REPLACED by a drifting soap bubble holding a
+ *  mini sad-face of the character (cap + eyes only). Deterministic off animT. */
+function drawBubble(ctx: Ctx, x: number, y: number, big: boolean, pal: EstradaPal, rig: CharRig, animT: number): void {
+  const bob = Math.sin(animT / 16) * 1.5;
+  const r = big ? 15 : 12.5;
+  ctx.save();
+  ctx.translate(x, y + bob);
+  ctx.beginPath(); // soap film
+  ctx.arc(0, 0, r, 0, Math.PI * 2);
+  ctx.fillStyle = 'rgba(185,222,255,0.30)';
+  ctx.fill();
+  ctx.lineWidth = 2; // bright rim
+  ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+  ctx.stroke();
+  ctx.beginPath(); // faint inner rim
+  ctx.arc(0, 0, r - 2.5, 0, Math.PI * 2);
+  ctx.lineWidth = 1;
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.stroke();
+  ctx.beginPath(); // glint arc, top-left
+  ctx.arc(0, 0, r - 4, Math.PI * 1.15, Math.PI * 1.45);
+  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#ffffff';
+  ctx.stroke();
+  disc(ctx, r * 0.45, r * 0.5, 1.2, 'rgba(255,255,255,0.85)'); // second glint
+  // mini sad face: cap + eyes only — just enough to know who is in there
+  const s = big ? 1 : 0.85;
+  ctx.scale(s, s);
+  ctx.fillStyle = pal.cap;
+  ctx.fillRect(-6.5, -8.5, 13, 4);
+  ctx.fillStyle = pal.capDark;
+  ctx.fillRect(-6.5, -8.5, 2.5, 4);
+  disc(ctx, 0, -8.8, 2.8, '#ffffff');
+  rig.mark(ctx, false, 0, -8.8, 0.8, pal.discE);
+  if (rig.eyes === 'round') {
+    disc(ctx, -3, -1, 2.2, '#ffffff');
+    disc(ctx, 3, -1, 2.2, '#ffffff');
+    disc(ctx, -3, -0.2, 1, OUT); // pupils low: sad
+    disc(ctx, 3, -0.2, 1, OUT);
+    disc(ctx, -3.6, -1.8, 0.6, '#ffffff');
+    disc(ctx, 2.4, -1.8, 0.6, '#ffffff');
+  } else {
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(-4.6, -2.4, 3.4, 2.8);
+    ctx.fillRect(1.2, -2.4, 3.4, 2.8);
+    ctx.fillStyle = OUT;
+    ctx.fillRect(-4.6, -2.4, 3.4, 0.8); // half-mast lids, even in the bubble
+    ctx.fillRect(1.2, -2.4, 3.4, 0.8);
+    ctx.fillRect(-3.4, -1.4, 1.4, 1.2);
+    ctx.fillRect(2.4, -1.4, 1.4, 1.2);
+  }
+  ctx.beginPath(); // the sad little mouth
+  ctx.arc(0, 5.2, 2.6, Math.PI * 1.15, Math.PI * 1.85);
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = OUT;
+  ctx.stroke();
+  ctx.restore();
+}
+
 /** Silhouette-stamp offsets approximating a 2px ink outline. */
 const OUTLINE_OFFS: readonly (readonly [number, number])[] = [
   [-1.6, 0], [1.6, 0], [0, -1.6], [0, 1.6],
@@ -1717,6 +2416,24 @@ export function drawPlayer(ctx: Ctx, player: PlayerLike, cam: CameraState, frame
   const sx = snap(player.x - cam.x);
   const sy = snap(player.y - cam.y);
   if (sx < -CULL || sx > VIEW_W + CULL || sy < -CULL || sy > VIEW_H + CULL) return;
+
+  // Free-running animation clock. PlayerLike does not name animT; probe it
+  // informally (same accepted seam as checkpoint.claimed), fall back to frame.
+  const animT = (player as unknown as { animT?: number }).animT ?? frame;
+  // Safe reads: the concrete Player may not carry the co-op fields until the
+  // level/input workflow lands — default to Estrada, never crash.
+  const character: CharacterId = player.character ?? 'estrada';
+  const rig = CHAR_RIG[character];
+  const big = player.size !== 'small';
+  const pal = rig.pal[player.size];
+
+  // Co-op bubble: the whole body is replaced by the drifting soap bubble
+  // (drawn BEFORE the hurt-blink skip — the bubble is the player's locator).
+  if ((player.bubbleT ?? 0) > 0) {
+    drawBubble(ctx, sx, sy + player.halfH - rig.visH(big) / 2, big, pal, rig, animT);
+    return;
+  }
+
   // classic hurt blink: skip every other 3-frame window while invulnerable
   if (player.invulnT > 0 && player.immunityT <= 0 && Math.floor(frame / 3) % 2 === 0) return;
 
@@ -1737,11 +2454,6 @@ export function drawPlayer(ctx: Ctx, player: PlayerLike, cam: CameraState, frame
     sclY = 1.08;
   }
 
-  // Free-running animation clock. PlayerLike does not name animT; probe it
-  // informally (same accepted seam as checkpoint.claimed), fall back to frame.
-  const animT = (player as unknown as { animT?: number }).animT ?? frame;
-  const pal = PLAYER_PAL[player.size];
-  const big = player.size !== 'small';
   const speed = Math.abs(player.vx);
 
   // ---- pose from state (animT free-runs; gameplay never resets it) ----
@@ -1766,7 +2478,7 @@ export function drawPlayer(ctx: Ctx, player: PlayerLike, cam: CameraState, frame
   // (blinks off intermittently during the final second as a wear-off warning).
   if (player.immunityT > 0 && !(player.immunityT < 60 && Math.floor(frame / 4) % 2 === 0)) {
     const hue = (frame * 6) % 360;
-    const vh = big ? 30 : 20;
+    const vh = rig.visH(big);
     const gy = sy + player.halfH - vh / 2;
     ctx.save();
     ctx.lineWidth = 5;
@@ -1795,10 +2507,10 @@ export function drawPlayer(ctx: Ctx, player: PlayerLike, cam: CameraState, frame
   for (const [ox, oy] of OUTLINE_OFFS) {
     ctx.save();
     ctx.translate(ox, oy);
-    estradaSprite(ctx, pal, big, pose, true);
+    rig.sprite(ctx, pal, big, pose, true);
     ctx.restore();
   }
-  estradaSprite(ctx, pal, big, pose, false);
+  rig.sprite(ctx, pal, big, pose, false);
   ctx.restore();
 }
 

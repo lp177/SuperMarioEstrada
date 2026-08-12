@@ -1387,7 +1387,8 @@ export function drawFog(ctx: Ctx, camX: number, frame: number, maxWorld: WorldNo
   ctx.restore();
 }
 
-/** Estrada's map token: mini hero standing on (or walking between) dots. */
+/** Mangiani's map token: he is the one doing the walking (two-heroes pivot —
+ *  the credit-taker only shows up for the flag photos). */
 export function drawToken(
   ctx: Ctx, camX: number, x: number, y: number, frame: number,
   opts: { walking: boolean; facing: 1 | -1; bob: boolean },
@@ -1405,10 +1406,10 @@ export function drawToken(
   ctx.fillStyle = '#5a3a1e';
   ctx.fillRect(-5 + step, -2, 4, 2.5);
   ctx.fillRect(1 - step, -2, 4, 2.5);
-  // overalls + shirt
-  ctx.fillStyle = '#2a4fd8';
+  // overalls (Mangiani's darker blue) + green shirt
+  ctx.fillStyle = '#24427c';
   ctx.fillRect(-5, -8, 10, 6.5);
-  ctx.fillStyle = '#d8382a';
+  ctx.fillStyle = '#2f9e44';
   ctx.fillRect(-5, -10.5, 10, 3);
   ctx.fillRect(-7, -10 + step * 0.5, 2, 4);
   ctx.fillRect(5, -10 - step * 0.5, 2, 4);
@@ -1419,24 +1420,22 @@ export function drawToken(
   ctx.fillStyle = '#f2b98a';
   ctx.fillRect(-5, -17, 10, 7);
   ctx.fillStyle = '#e0a070';
-  ctx.fillRect(4, -14, 2, 2); // the proud nose
+  ctx.fillRect(4, -14, 2, 2); // the honest round nose
   ctx.fillStyle = '#ffffff';
-  ctx.fillRect(1, -16, 3, 2);
+  ctx.fillRect(1, -16, 3, 2.6); // big open eye — no half-lid, nothing to hide
   ctx.fillStyle = '#000';
-  ctx.fillRect(2, -15.4, 2, 1.2);
-  ctx.fillRect(1, -16, 3, 0.8); // half-lid: smug at map scale too
-  ctx.fillStyle = '#3a2a1e';
-  ctx.fillRect(-5, -17, 2, 3.5); // sideburn
-  ctx.fillRect(0, -12.2, 4, 1); // pencil moustache
-  // cap + medallion
-  ctx.fillStyle = '#d8382a';
+  ctx.fillRect(1.8, -15.2, 1.5, 1.4);
+  ctx.fillStyle = '#5a3a1c';
+  ctx.fillRect(-5, -17, 2, 3.5); // brown fringe sideburn
+  // cap + medallion: GREEN with the white 'M'
+  ctx.fillStyle = '#2f9e44';
   ctx.fillRect(-6, -20.5, 12, 4);
   ctx.fillRect(3, -17.5, 4.5, 2);
-  ctx.fillStyle = '#ffd34e';
+  ctx.fillStyle = '#ffffff';
   ctx.beginPath();
   ctx.arc(0, -18.5, 2.2, 0, Math.PI * 2);
   ctx.fill();
-  artText(ctx, 'E', 0, -18.2, 4, '#8a2020');
+  artText(ctx, 'M', 0, -18.2, 4, '#1f6f30');
   ctx.restore();
 }
 

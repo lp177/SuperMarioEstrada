@@ -85,6 +85,7 @@ export function makeInput(partial: Partial<InputState> = {}): InputState {
     run: false,
     firePressed: false,
     pausePressed: false,
+    swapPressed: false,
     ...partial,
   };
 }

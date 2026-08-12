@@ -1196,8 +1196,28 @@ const sceneMangianiJoins: SceneFn = (c, frame) => {
   vignette(c, 0.20);
 };
 
-// --- w1/w2/w3 beat: too late (again) -----------------------------------------
-const sceneTooLate: SceneFn = (c, frame) => {
+// --- w1/w2/w3 beats: too late (again) ------------------------------------------
+// ONE castle-door composition, three escalating pieces of evidence: warm coffee
+// -> still-smoking cigarette -> the kidnapper's cat, fed on schedule. Everything
+// except the evidence prop, the management note and the punchlines is shared.
+interface TooLateSpec {
+  /** Management's note nailed to the door, one entry per line (11px each). */
+  noteLines: readonly string[];
+  /** Estrada's resigned caption (the same word, escalating). */
+  quip: string;
+  /** Mangiani's deduction over the evidence. */
+  callout: string;
+  /** How done Mangiani is with this. */
+  mangianiMouth: 'grim' | 'open';
+  /** THE EVIDENCE, drawn ON the stool (top face y=268, spanning x 476..532). */
+  evidence(c: Ctx, frame: number): void;
+  /** Variant dressing on the door itself (drawn right after the leaves). */
+  doorExtra?(c: Ctx, frame: number): void;
+  /** Variant near-camera layer (drawn after the foreground pillars). */
+  foreground?(c: Ctx, frame: number): void;
+}
+
+const tooLateScene = (spec: TooLateSpec): SceneFn => (c, frame) => {
   vgrad(c, [[0, '#4a3c5e'], [1, '#332848']]);
   stoneWall(c, 71, 46, 306, '#5a4a6e', '#4c3e60', 'rgba(190,170,220,0.18)');
   flat(c, 0, 40, VIEW_W, 8, '#3a2f50');
@@ -1215,6 +1235,7 @@ const sceneTooLate: SceneFn = (c, frame) => {
     poly(c, [[246, hz], [286, hz + 8], [286, hz + 14], [246, hz + 6]], '#8a8494', 2);
   }
   disc(c, 308, 216, 5, COIN, 2);
+  spec.doorExtra?.(c, frame);
   // 'RENT-A-CASTLE' tag hangs from the open leaf's hinge on a string
   seg(c, 250, 152, 240, 176, '#c8b088', 1.5);
   c.save(); c.translate(238, 186); c.rotate(-0.12 + Math.sin(frame * 0.04) * 0.05);
@@ -1224,9 +1245,10 @@ const sceneTooLate: SceneFn = (c, frame) => {
   // the note, nailed to the CLOSED leaf
   rect(c, 336, 148, 120, 78, '#f4f0e6');
   disc(c, 396, 144, 3, '#8a8494', 2);
-  txt(c, 'SHE IS IN', 396, 166, 11, INK, 'center', false);
-  txt(c, 'ANOTHER CASTLE,', 396, 182, 11, INK, 'center', false);
-  txt(c, 'SORRY', 396, 198, 11, INK, 'center', false);
+  const nLines = spec.noteLines.length;
+  spec.noteLines.forEach((line, i) => {
+    txt(c, line, 396, 182 + (i - (nLines - 1) / 2) * 16, 11, INK, 'center', false);
+  });
   txt(c, '- mgmt', 424, 214, 9, '#8a8494', 'center', false);
   // stagecraft: a tape seam up the "stone" wall + WET PAINT placard leaning on it
   seg(c, 92, 46, 92, 306, 'rgba(220,210,170,0.3)', 6);
@@ -1245,30 +1267,155 @@ const sceneTooLate: SceneFn = (c, frame) => {
   checkerFloor(c, 306, '#4a3c58', '#3e3050');
   rect(c, 264, 312, 112, 20, '#8a6a3a', 2);
   txt(c, 'GONE KIDNAPPING', 320, 322, 8, '#3a2c14', 'center', false);
-  // stool + STILL-STEAMING coffee (the entire case, in one prop)
+  // the evidence pedestal: a stool, dead center of Mangiani's attention
   rect(c, 476, 268, 56, 10, '#6b4420', 2.5);
   seg(c, 484, 278, 480, 306, '#6b4420', 4);
   seg(c, 524, 278, 528, 306, '#6b4420', 4);
   seg(c, 504, 278, 504, 306, '#6b4420', 4);
-  coffeeCup(c, 504, 266, 1.2, frame);
+  spec.evidence(c, frame);
   // Estrada shrugging THEATRICALLY (slow loop)
   const shrug = Math.sin(frame * 0.05) * 3;
   drawEstrada(c, 152, 306 + shrug * 0.3, 1.15, { facing: 1, eyes: 'closed', mouth: 'grin', arms: 'shrug' });
-  txt(c, 'welp.', 152, 172, 13, '#fff');
-  // Mangiani, staring at the cup, doing the math
-  drawMangiani(c, 560, 306, 1.1, { facing: -1, eyes: 'narrow', brows: 'raised', mouth: 'grim', pose: 'point', backpack: true });
+  txt(c, spec.quip, 152, 172, 13, '#fff');
+  // Mangiani, staring at the evidence, doing the math
+  drawMangiani(c, 560, 306, 1.1, { facing: -1, eyes: 'narrow', brows: 'raised', mouth: spec.mangianiMouth, pose: 'point', backpack: true });
   c.setLineDash([4, 6]);
   seg(c, 540, 204, 512, 250, 'rgba(255,255,255,0.5)', 2);
   c.setLineDash([]);
-  txt(c, '...still hot?', 548, 170, 11, '#fff');
+  txt(c, spec.callout, 548, 170, 11, '#fff');
   motes(c, 83, 8, 150, 120, 120, 160, frame);
   // FOREGROUND: pillar edges frame the shot
   flat(c, 0, 0, 26, VIEW_H, '#241b38');
   flat(c, 614, 0, 26, VIEW_H, '#241b38');
   flat(c, 0, 286, 34, 14, '#2c2244');
   flat(c, 606, 286, 34, 14, '#2c2244');
+  spec.foreground?.(c, frame);
   vignette(c, 0.32);
 };
+
+// w1: STILL-STEAMING coffee (the entire case, in one prop)
+const sceneTooLate = tooLateScene({
+  noteLines: ['SHE IS IN', 'ANOTHER CASTLE,', 'SORRY'],
+  quip: 'welp.',
+  callout: '...still hot?',
+  mangianiMouth: 'grim',
+  evidence: (c, frame) => coffeeCup(c, 504, 266, 1.2, frame), // cup ON the stool top
+});
+
+// w2: a cigarette in an ashtray, EMBER STILL GLOWING, smoke still rising
+const sceneTooLate2 = tooLateScene({
+  noteLines: ['STILL ANOTHER', 'CASTLE.', 'STOP COMING.'],
+  quip: 'welp. again.',
+  callout: '...still smoking?',
+  mangianiMouth: 'grim',
+  evidence: (c, frame) => {
+    // glass ashtray sitting ON the stool top
+    ell(c, 504, 264, 14, 5, '#9aa0b4', 2.5);                 // the dish
+    ell(c, 504, 262.5, 9, 2.6, '#5a5f72', 1.5);              // its hollow
+    // two stubbed butts IN the hollow (this is a routine, not an accident)
+    seg(c, 499, 262, 503, 260.5, '#e8e2d0', 3);
+    seg(c, 506, 261, 509.5, 262.5, '#e8e2d0', 3);
+    disc(c, 503.4, 260.4, 1, '#8a8494', 0);
+    disc(c, 505.8, 260.9, 1, '#8a8494', 0);
+    // THE cigarette: filter resting ON the ashtray rim, ember end cantilevered
+    seg(c, 508, 261.5, 515, 259.4, '#d99a4a', 3.5);          // cork filter
+    seg(c, 515, 259.4, 522, 257.3, '#f4f0e6', 3.5);          // paper body
+    seg(c, 522, 257.3, 524.5, 256.5, '#7a7466', 3.5);        // ash about to drop
+    // pulsing ember + its glow
+    const pulse = 0.5 + 0.5 * Math.sin(frame * 0.11);
+    const eg = c.createRadialGradient(525.5, 256, 1, 525.5, 256, 14);
+    eg.addColorStop(0, `rgba(255,140,60,${(0.25 + pulse * 0.22).toFixed(2)})`);
+    eg.addColorStop(1, 'rgba(255,140,60,0)');
+    c.fillStyle = eg; c.fillRect(511, 242, 29, 28);
+    disc(c, 525.5, 256.2, 1.9, '#ff8c3a', 0);
+    disc(c, 525.5, 256.2, 0.9, pulse > 0.5 ? '#ffe9a0' : '#ffd94d', 0);
+    // the lazy smoke ribbon, curling up FROM the ember (fades as it climbs)
+    for (let k = 0; k < 16; k++) {
+      const t0 = k / 16, t1 = (k + 1) / 16;
+      const px0 = 525.5 + Math.sin(frame * 0.045 + t0 * 5.2) * (1.5 + t0 * 14);
+      const py0 = 254 - t0 * 92;
+      const px1 = 525.5 + Math.sin(frame * 0.045 + t1 * 5.2) * (1.5 + t1 * 14);
+      const py1 = 254 - t1 * 92;
+      seg(c, px0, py0, px1, py1, `rgba(222,226,238,${(0.55 * (1 - t0 * 0.85)).toFixed(2)})`, 2 + t0 * 2.5);
+    }
+  },
+});
+
+// w3: the cat's bowl, kibble heaped FRESH — somebody kept the feeding schedule
+const sceneTooLate3 = tooLateScene({
+  noteLines: ['AT THIS POINT', 'THIS IS ON YOU.'],
+  quip: 'welp. thrice.',
+  callout: '...fresh kibble?',
+  mangianiMouth: 'open',
+  evidence: (c, frame) => {
+    // the cat bowl ON the stool top, fish-skeleton decal on the front
+    poly(c, [[488, 268], [520, 268], [524, 255], [484, 255]], '#3f8fd0', 2.5);
+    ell(c, 504, 255, 20, 3.6, '#3577b0', 2);                 // rim
+    seg(c, 495, 261.5, 511, 261.5, '#f4f0e6', 1.5);          // decal: spine
+    for (let i = 0; i < 3; i++) seg(c, 500 + i * 4, 259, 500 + i * 4, 264, '#f4f0e6', 1.5); // ribs
+    poly(c, [[511, 261.5], [515.5, 258.5], [515.5, 264.5]], '#f4f0e6', 0);  // tail
+    disc(c, 493.5, 261.5, 2.2, '#f4f0e6', 0);                // head
+    disc(c, 493, 261.2, 0.8, INK, 0);                        // eye
+    // kibble: a fresh heap INSIDE the rim, two strays ON the stool beside it
+    ell(c, 504, 252, 13, 5.5, '#8a5a2b', 2);
+    const krng = createRng(313);
+    for (let i = 0; i < 16; i++) {
+      const a = krng() * Math.PI * 2;
+      const r = Math.sqrt(krng());
+      disc(c, 504 + Math.cos(a) * r * 11, 251.5 + Math.sin(a) * r * 3.8, 1.4, krng() < 0.5 ? '#a9743f' : '#6b4420', 0);
+    }
+    disc(c, 481, 266.5, 1.5, '#a9743f', 0);                  // strays ON the stool top
+    disc(c, 526.5, 266.8, 1.5, '#6b4420', 0);
+    // one well-fed fly doing lazy circuits above the heap
+    const fa = frame * 0.06;
+    const fx = 504 + Math.cos(fa) * 17;
+    const fy = 241 + Math.sin(fa * 2.3) * 4;
+    c.fillStyle = INK; c.fillRect(fx - 1.2, fy - 1.2, 2.6, 2.6);
+    c.fillStyle = 'rgba(255,255,255,0.6)'; c.fillRect(fx + 0.8, fy - 2.2, 1.6, 1.6); // wing glint
+  },
+  doorExtra: (c, frame) => {
+    // a cat-flap set INTO the open leaf, still swinging — somebody JUST left
+    poly(c, [[266, 298], [266, 276], [296, 273], [296, 298]], '#4a3418', 2.5); // flap frame
+    flat(c, 269, 278, 24, 18, '#0d0a14');                    // the hole behind it
+    const lift = Math.abs(Math.sin(frame * 0.06)) * 7;       // hinged at the top
+    poly(c, [[269, 278], [293, 275.5], [293, 296 - lift], [269, 298 - lift]], '#6b4420', 2);
+    seg(c, 269, 278, 293, 275.5, '#8a8494', 2);              // the hinge strip
+    txt(c, 'CAT DOOR', 281, 268, 5, '#c8b088', 'center', false);
+  },
+  foreground: (c, frame) => {
+    // paw prints from the flap toward the exit (right past the hero)
+    for (const [px, py] of [[266, 310], [232, 315], [196, 320], [158, 325], [118, 330]] as const) {
+      disc(c, px, py, 2.4, 'rgba(14,10,26,0.8)', 0);
+      for (let i = 0; i < 3; i++) disc(c, px - 2.6 + i * 2.6, py - 3.6, 1, 'rgba(14,10,26,0.8)', 0);
+    }
+    // the kidnapper's cat, fed and smug, padding off-frame with its tail up
+    // (kept ABOVE the vignette's black corner so the silhouette reads)
+    const bob = Math.sin(frame * 0.11) * 1.2;
+    const cx2 = 56, cy2 = 322 + bob;
+    for (let i = 0; i < 4; i++) {                            // striding legs, feet ON the floor
+      const st = Math.sin(frame * 0.12 + i * 1.7) * 3;
+      seg(c, cx2 - 11 + i * 8, cy2 + 5, cx2 - 11 + i * 8 + st, cy2 + 15, '#141020', 4);
+    }
+    const tsw = Math.sin(frame * 0.06) * 3;                  // tail UP, tip curled
+    c.strokeStyle = '#141020'; c.lineWidth = 5; c.lineCap = 'round';
+    c.beginPath(); c.moveTo(cx2 + 15, cy2 - 3);
+    c.quadraticCurveTo(cx2 + 27, cy2 - 24, cx2 + 18 + tsw, cy2 - 37);
+    c.stroke();
+    c.lineCap = 'butt';
+    ell(c, cx2, cy2, 18, 8.5, '#141020', 0);                 // body
+    disc(c, cx2 - 15, cy2 - 10, 6.8, '#141020', 0);          // head, chin UP (smug)
+    poly(c, [[cx2 - 20, cy2 - 14], [cx2 - 16.5, cy2 - 21], [cx2 - 13.5, cy2 - 14.5]], '#141020', 0); // ears
+    poly(c, [[cx2 - 12, cy2 - 15], [cx2 - 9, cy2 - 21], [cx2 - 6.5, cy2 - 14.5]], '#141020', 0);
+    // strong rim light so the silhouette reads against the dark floor
+    c.strokeStyle = 'rgba(200,180,230,0.65)'; c.lineWidth = 2;
+    c.beginPath(); c.ellipse(cx2, cy2, 18, 8.5, 0, Math.PI * 1.02, Math.PI * 1.98); c.stroke();
+    c.beginPath(); c.arc(cx2 - 15, cy2 - 10, 6.8, Math.PI * 0.85, Math.PI * 1.75); c.stroke();
+    c.strokeStyle = 'rgba(200,180,230,0.5)'; c.lineWidth = 1.5; // tail rim
+    c.beginPath(); c.moveTo(cx2 + 17, cy2 - 5);
+    c.quadraticCurveTo(cx2 + 29, cy2 - 24, cx2 + 20 + tsw, cy2 - 38);
+    c.stroke();
+  },
+});
 
 // --- w1/w2/w3 beat: the hands do not add up ----------------------------------
 const sceneBigHands: SceneFn = (c, frame) => {
@@ -1775,6 +1922,8 @@ const SCENES: Record<CutsceneArtId, SceneFn> = {
   'hero-speech': sceneHeroSpeech,
   'mangiani-joins': sceneMangianiJoins,
   'too-late': sceneTooLate,
+  'too-late-2': sceneTooLate2,
+  'too-late-3': sceneTooLate3,
   'big-hands': sceneBigHands,
   'ballot-rant': sceneBallotRant,
   'coffee-break': sceneCoffeeBreak,

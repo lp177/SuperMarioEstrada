@@ -43,9 +43,11 @@ export const SCRIPTS: Record<CutsceneId, CutsceneScript> = {
     id: 'w2-end',
     music: 'cutscene',
     beats: [
-      { art: 'too-late', speaker: 'ESTRADA', text: 'Too late AGAIN! She was here MINUTES ago! I am DEVASTATED! Visibly!' },
-      { art: 'coffee-break', speaker: 'MANGIANI', text: 'You stopped for a ninety-minute espresso. I watched you do it. I timed it.' },
-      { art: 'coffee-break', speaker: 'ESTRADA', text: 'Rescue is a marathon, not a sprint. Hydration, Mangiani. Basic hero science.' },
+      // The door-evidence gag ESCALATES per world: coffee (w1) -> cigarette
+      // (here) -> cat bowl (w3). Never the same evidence twice.
+      { art: 'too-late-2', speaker: 'ESTRADA', text: 'Too late AGAIN! She was here MINUTES ago! I am DEVASTATED! Visibly!' },
+      { art: 'too-late-2', speaker: 'MANGIANI', text: 'A cigarette. On the doorstep. Still smoking. Since when does Bowsonaro smoke?' },
+      { art: 'too-late-2', speaker: 'ESTRADA', text: 'Since the stress of kidnapping. Heavy smoker, that turtle. It is documented.' },
       { art: 'dungeon', speaker: '', text: 'Somewhere below, the real Peach filed her third noise complaint. The rats were unionizing.' },
       { art: 'big-hands', speaker: 'MANGIANI', text: 'Also... since when does Peach have that accent?' },
       { art: 'staged-kidnap', speaker: 'PRINCESS IMPEACH', text: 'HELP-io! I am being kidnap-io! ...That is how I have always talked. Tremendous talking. The best.' },
@@ -57,10 +59,13 @@ export const SCRIPTS: Record<CutsceneId, CutsceneScript> = {
     id: 'w3-end',
     music: 'cutscene',
     beats: [
-      { art: 'too-late', speaker: 'ESTRADA', text: 'SO close! If only I had not stopped to personally certify those four thousand casino coins!' },
+      { art: 'too-late-3', speaker: 'ESTRADA', text: 'SO close! If only I had not stopped to personally certify those four thousand casino coins!' },
+      { art: 'too-late-3', speaker: 'MANGIANI', text: 'The cat bowl. FRESH kibble. Somebody fed the kidnapper’s cat... on schedule.' },
+      { art: 'too-late-3', speaker: 'ESTRADA', text: 'A fed cat proves nothing. Hungry cats testify. That is basic law, Mangiani.' },
+      { art: 'coffee-break', speaker: 'MANGIANI', text: 'And you took a ninety-minute espresso on the way in. I watched you. I timed it.' },
+      { art: 'coffee-break', speaker: 'ESTRADA', text: 'Rescue is a marathon, not a sprint. Hydration. Basic hero science.' },
       { art: 'big-hands', speaker: 'MANGIANI', text: 'I measured her hand from the balcony. Forty centimeters, Estrada. FORTY.' },
       { art: 'big-hands', speaker: 'ESTRADA', text: 'Growth hormone in the royal mushrooms. Tragic. A known scandal. No further questions.' },
-      { art: 'ballot-rant', speaker: 'BOWSONARO', text: 'And ANOTHER thing about the Supreme Toad Court and its TURTLE-HATING agenda—' },
       { art: 'ballot-rant', speaker: 'MANGIANI', text: 'Why does Bowser only ever talk about turtle elections in Brazil?' },
       { art: 'dungeon', speaker: '', text: 'Below the castle, Peach taught the skeleton to play poker. He was winning. She let him.' },
       { art: 'coffee-break', speaker: 'MANGIANI', text: 'Tomorrow. The last castle. And this time I am keeping my eyes OPEN.' },

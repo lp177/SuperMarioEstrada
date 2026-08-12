@@ -52,6 +52,8 @@ class StubMap implements TileMapLike {
 
 function stubPlayer(x: number, y: number): PlayerLike {
   return {
+    character: 'mangiani',
+    bubbleT: 0,
     x,
     y,
     vx: 0,

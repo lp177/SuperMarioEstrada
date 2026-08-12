@@ -17,6 +17,10 @@ export interface Services {
   progress: ProgressData;
   setProgress: (p: ProgressData) => void;
   reducedMotion: () => boolean;
+  /** Session mode: false = solo (Mangiani + swap key), true = local co-op
+   *  (P2 = Estrada on secondary keys / second gamepad). Set by the title
+   *  menu, read by the level scene. */
+  coop: boolean;
 }
 
 export type SceneFactory = {

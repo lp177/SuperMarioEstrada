@@ -220,7 +220,9 @@ export function drawTitleArt(ctx: CanvasRenderingContext2D, frame: number): void
     item: 'bag',
   });
 
-  // Mangiani tiny in the corner, magnifying glass out, already suspicious
+  // Mangiani tiny in the corner, already suspicious — with an UNMISTAKABLE
+  // magnifying glass: fat face-on lens held over his face, and behind it his
+  // eye HUGELY magnified (the cue that sells the prop at this scale).
   drawMangiani(c, 606, 244, 0.42, {
     facing: -1,
     eyes: 'narrow',
@@ -228,6 +230,39 @@ export function drawTitleArt(ctx: CanvasRenderingContext2D, frame: number): void
     pose: 'magnify',
     backpack: true,
   });
+  // wipe the cast's tiny edge-on lens; the face-on redraw below replaces it
+  c.fillStyle = '#3c2454'; // far-hill color behind the old prop
+  c.beginPath(); c.arc(590, 206, 5.5, 0, Math.PI * 2); c.fill();
+  const LX = 600, LY = 200, LR = 10;
+  // stubby rounded handle leaving the rim on the lower diagonal, into his fist
+  c.lineCap = 'round';
+  c.strokeStyle = INK; c.lineWidth = 6.5;
+  c.beginPath(); c.moveTo(594.9, 208.6); c.lineTo(589.6, 217.8); c.stroke();
+  c.strokeStyle = '#8a5a2b'; c.lineWidth = 3;
+  c.beginPath(); c.moveTo(594.3, 209.6); c.lineTo(589.9, 217.3); c.stroke();
+  c.lineCap = 'butt';
+  // pale glass fill
+  c.beginPath(); c.arc(LX, LY, LR, 0, Math.PI * 2);
+  c.fillStyle = 'rgba(190,230,255,0.30)'; c.fill();
+  // the giant magnified eye + one glass streak, clipped INSIDE the lens
+  c.save();
+  c.beginPath(); c.arc(LX, LY, LR - 1, 0, Math.PI * 2); c.clip();
+  c.beginPath(); c.ellipse(600.5, 200.5, 6.6, 7.2, 0, 0, Math.PI * 2);
+  c.fillStyle = '#fff'; c.fill();
+  c.strokeStyle = INK; c.lineWidth = 2; c.stroke();
+  c.beginPath(); c.arc(599.2, 201.2, 3.4, 0, Math.PI * 2); c.fillStyle = '#7a4a26'; c.fill(); // iris
+  c.beginPath(); c.arc(598.9, 201.5, 1.9, 0, Math.PI * 2); c.fillStyle = INK; c.fill();       // pupil
+  c.beginPath(); c.arc(600.3, 199.6, 1.05, 0, Math.PI * 2); c.fillStyle = '#fff'; c.fill();   // highlight
+  c.strokeStyle = 'rgba(255,255,255,0.8)'; c.lineWidth = 2.4; c.lineCap = 'round';
+  c.beginPath(); c.moveTo(593.6, 197.2); c.lineTo(598.8, 191.8); c.stroke();
+  c.lineCap = 'butt';
+  c.restore();
+  // the fat rim, face-on to camera
+  c.beginPath(); c.arc(LX, LY, LR, 0, Math.PI * 2);
+  c.strokeStyle = INK; c.lineWidth = 3; c.stroke();
+  // his glove re-gripping the handle (handle visible both above and below it)
+  c.beginPath(); c.arc(592.4, 212.9, 2.6, 0, Math.PI * 2);
+  c.fillStyle = '#f4f0e6'; c.fill(); c.strokeStyle = INK; c.lineWidth = 1.5; c.stroke();
 
   c.restore();
 }

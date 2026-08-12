@@ -41,7 +41,8 @@ export class LevelScene implements SceneLike {
   ) {
     const def = LEVELS.find(d => d.id === params.levelId);
     if (!def) throw new Error(`unknown level id: ${params.levelId}`);
-    this.level = new Level(def);
+    services.input.setMode(services.coop ? 'coop' : 'solo');
+    this.level = new Level(def, { coop: services.coop });
     this.fx = new FxSystem(services.reducedMotion);
     this.decor = buildDecor(def.theme, this.level.map, idHash(def.id));
     this.nav = new MenuNav(services.input);
@@ -81,7 +82,14 @@ export class LevelScene implements SceneLike {
       return;
     }
 
-    const events = this.level.update(st);
+    // Solo: one merged channel (+ the hero-swap key). Co-op: split channels.
+    let events: ReturnType<Level['update']>;
+    if (this.services.coop) {
+      events = this.level.update(this.services.input.state(0), this.services.input.state(1));
+    } else {
+      if (st.swapPressed && !this.level.finished) this.level.swapCharacter();
+      events = this.level.update(st);
+    }
     for (const ev of events) {
       const src = this.level.eventSources.get(ev);
       const x = src ? src.x : this.level.player.x;
@@ -155,11 +163,22 @@ export class LevelScene implements SceneLike {
     // drawDecor subtracts the camera itself — pass cam, do NOT also translate
     // (double-offsetting sent trucks and grass into the sky; one owner only).
     drawDecor(ctx, this.decor, scam, 'back', this.frame);
+    // Pipe transit: players sink BEHIND the tiles so the pipe swallows the
+    // sprite instead of it sliding down in front of the pipe. (Warp rides
+    // freeze the world, so during one ALL bodies draw behind — harmless.)
+    if (this.level.warping) {
+      for (const p of this.level.players) drawPlayer(ctx, p, scam, this.frame);
+    }
     drawTiles(ctx, this.level, scam);
     this.fx.renderGround(ctx, scam);
     drawEntities(ctx, this.level, scam, this.frame);
     if (this.level.boss) drawBoss(ctx, this.level.boss, scam, this.frame);
-    drawPlayer(ctx, this.level.player, scam, this.frame);
+    if (!this.level.warping) {
+      // P2 draws first so P1 (the "camera owner") reads on top in overlaps.
+      for (let i = this.level.players.length - 1; i >= 0; i--) {
+        drawPlayer(ctx, this.level.players[i]!, scam, this.frame);
+      }
+    }
     drawGoal(ctx, this.level, scam, this.frame);
     this.fx.renderAir(ctx, scam);
     drawDecor(ctx, this.decor, scam, 'front', this.frame);

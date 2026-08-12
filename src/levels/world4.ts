@@ -230,6 +230,12 @@ export const world4: LevelDef[] = [
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'chipstack'] }); // ballot boxes
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
       c = gapJump(b, c.endX, c.endRow, { gap: 4 });
+      b.enemy('gavel', c.endX - 2, c.endRow - 4); // 2026-08 difficulty wave:
+      // the DOORMAN'S BOOT stamps the gap landing (col 65) — the judges'
+      // corridor now starts one jump early: time the leap AND the crusher.
+      // A hurt for Certified, 65 tiles from the start (> 27, idle-silent),
+      // both checkpoints sit after it, and the deserters' tunnel warp still
+      // skips the whole corridor for explorers.
       c = gavelRun(b, c.endX, c.endRow, { len: 18 }); // 3 gavels, 16 coins
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
@@ -390,7 +396,17 @@ export const world4: LevelDef[] = [
       c = gapJump(b, c.endX, c.endRow, { gap: 4 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['lobbyist', 'pollster', 'chipstack'] });
+      const throneLip = c.endX + 2; // last approach tile of the moat below
       c = lavaGap(b, c.endX, c.endRow, { gap: 4 }); // 4 coins
+      b.lava(throneLip, throneLip, c.endRow); // LAVA LIP (2026-08 difficulty
+      // wave): the melt eats the last takeoff tile (col 57) — the effective
+      // crossing is 5, still inside the authoring cap, but the runway is one
+      // tile shorter than it looks and the glow says so. The lip goes down
+      // THREE rows (the whole ground cap of the fill) so the flow bot's
+      // 2-tile support probe reads it as gap, not step — it joins the moat
+      // pool and rests on bedrock (rule 10 anchored).
+      b.lava(throneLip, throneLip, c.endRow + 1);
+      b.lava(throneLip, throneLip, c.endRow + 2);
       c = gavelRun(b, c.endX, c.endRow, { len: 18 }); // 3 gavels, 16 coins
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
@@ -508,11 +524,18 @@ export const world4: LevelDef[] = [
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: 1 }); // up to 20
       // Speed retune (2026-08): the old 5-gap right off the climb gave ~4 flat
-      // tiles of approach — too short at runMax 3.8. Two runway tiles buy the
-      // sprint spin-up and the gap narrows to 3; endX is unchanged, so the
-      // crumble-over-lava absolutes below stay put.
-      c = runway(b, c.endX, c.endRow, { len: 2 });
-      c = coinArc(b, c.endX, c.endRow, { gap: 3 }); // 5 coins
+      // tiles of approach — too short at runMax 3.8. The gap narrowed to 3
+      // and (difficulty wave) the whole 12-column stretch is now one raw
+      // fragment: SIX flat takeoff tiles, the 3-void, a 2-tile landing — the
+      // bot used to clip this lip edge-on once per run and burn a respawn;
+      // with the long flat launch it clears first try. endX is unchanged, so
+      // the crumble-over-lava absolutes below stay put.
+      b.ground(c.endX, c.endX + 5, c.endRow); // 100-105: the takeoff
+      b.ground(c.endX + 9, c.endX + 10, c.endRow); // 109-110: the landing
+      for (let i = 0; i < 5; i++) {
+        b.coin(c.endX + 5 + i, c.endRow - (2 + Math.min(i, 4 - i, 2))); // arc
+      }
+      c = { endX: c.endX + 11, endRow: c.endRow }; // -> 111, as before
       c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
       c = crumbleBridge(b, c.endX, c.endRow, { len: 6 });
       b.lava(119, 124, 28);
@@ -524,7 +547,18 @@ export const world4: LevelDef[] = [
       c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
       c = goldbarPerch(b, c.endX, c.endRow, { index: 3 });
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['chipstack', 'rat'] });
+      const finalLip = c.endX + 2; // last approach tile of the apex-bar moat
       c = lavaGap(b, c.endX, c.endRow, { gap: 4, goldbar: 4 }); // 4 coins, apex bar
+      b.lava(finalLip, finalLip, c.endRow); // LAVA LIP (2026-08 difficulty
+      // wave): the palace's last moat eats its own takeoff tile (col 190) —
+      // effective crossing 5, and goldbar 4 still hangs at the apex, so the
+      // greed jump launches a tile earlier than it looks. The lip goes down
+      // three rows (full ground cap) so the bot's support probe reads gap,
+      // not step; it joins the moat pool on bedrock (rule 10 anchored). The
+      // glow telegraphs it, and checkpoint 2 (col 205) sits after it so
+      // respawns never re-face the moat.
+      b.lava(finalLip, finalLip, c.endRow + 1);
+      b.lava(finalLip, finalLip, c.endRow + 2);
       c = secretPocket(b, c.endX, c.endRow, { index: 2 });
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins — last save before the show
       expectCursor(c, 209, 'w4a7');

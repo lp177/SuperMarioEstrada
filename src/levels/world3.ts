@@ -132,6 +132,45 @@ function gavelRun(b: LevelBuilderLike, x: number, row: number): MotifEnd {
   return end;
 }
 
+/** THE CHIP SORTER (2026-08 difficulty wave): two spike-floored sorting trays
+ *  with one 2-wide safe island between them — precision landing, W3/W4 only.
+ *  Each tray is 3 deep and its carpet sits ON the tray floor (rule 10); the
+ *  deepest rest is spikes, so falling in carries risk (rule 8), and the plain
+ *  3-row exit walls clear rule 9's live escape probe. A sprint jump clears
+ *  the whole 10-column feature in one leap (the flow bot does exactly that);
+ *  the island is for the cautious and the greedy alike. */
+function spikeTrays(b: LevelBuilderLike, x: number, row: number): MotifEnd {
+  b.ground(x, x + 1, row); // takeoff shoulder
+  b.ground(x + 2, x + 3, row + 3); // tray 1 floor...
+  b.spikes(x + 2, x + 3, row + 2); // ...its carpet, anchored on it
+  b.ground(x + 4, x + 5, row); // the island
+  b.ground(x + 6, x + 7, row + 3); // tray 2 floor
+  b.spikes(x + 6, x + 7, row + 2);
+  b.ground(x + 8, x + 9, row); // landing shoulder
+  b.coinRow(x + 2, x + 7, row - 2); // 6 coins tracing the honest line
+  return { endX: x + 10, endRow: row };
+}
+
+/** A goldbar floating two rows over a spike trench (3 deep, teeth ON the
+ *  trench floor — rule 10): risk the LOOT, not the lane. The 2-wide trench
+ *  reads as a gap to the flow bot's 2-tile support probe (the teeth sit 2
+ *  rows down, the floor 3), so the mandatory run JUMPS it at speed and never
+ *  dips — the trench only ever catches whoever goes for the bar and
+ *  undershoots (Certified shrinks, neutral knockback shoves goal-ward, and
+ *  the plain 3-row wall under open sky is one full-hold jump out). It scans
+ *  as a floored hazard recess, so rule 9's live probe re-proves that escape
+ *  every run. */
+function spikeGuardedBar(b: LevelBuilderLike, x: number, row: number, bar: number): MotifEnd {
+  b.ground(x, x + 2, row);
+  b.ground(x + 3, x + 4, row + 3); // trench floor...
+  b.spikes(x + 3, x + 4, row + 2); // ...its teeth
+  b.ground(x + 5, x + 5, row);
+  b.goldbar(bar, x + 3, row - 2); // the bait, one clean arc away
+  b.coin(x + 3, row - 1); // two taunt coins under the bar
+  b.coin(x + 4, row - 1);
+  return { endX: x + 6, endRow: row };
+}
+
 /** A 2-brick teller wall with the loot visible behind it. Certified Estrada
  *  smashes through; everyone else jumps the counter (2 high — jumpable). */
 function brickCache(b: LevelBuilderLike, x: number, row: number): MotifEnd {
@@ -390,7 +429,9 @@ export const world3: LevelDef[] = [
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // down to 20
       c = gavelRun(b, c.endX, c.endRow); // 6 coins under the house lever
-      c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // 6 coins
+      c = spikeTrays(b, c.endX, c.endRow); // 6 coins — the chip sorter: two
+      // spike trays, one narrow island (was a free coinArc glide; 2026-08
+      // difficulty wave). 34 tiles past the checkpoint, in plain view.
       c = goldbarPerch(b, c.endX, c.endRow, { index: 2 });
       c = steppes(b, c.endX, c.endRow, { count: 3, stepH: 2, treadW: 2, dir: -1 }); // down to 26
       c = secretPocket(b, c.endX, c.endRow, { index: 1 });
@@ -458,7 +499,7 @@ export const world3: LevelDef[] = [
   // chains, drone escorts, a oneway marquee climb, the longest act in the
   // world — plus an honest warp shortcut past the entourage gauntlet for
   // players who press down on pipes. Gaps run at 5; the pre-castle exam.
-  // Coins: 11 + 9 + 3 + 6 + 9 + 3 + 13 + 7 = 61 entities + 2 qblock = 63.
+  // Coins: 11 + 9 + 3 + 6 + 9 + 3 + 2 + 13 + 7 = 63 entities + 2 qblock = 65.
   // -------------------------------------------------------------------------
   {
     id: 'w3a7',
@@ -486,7 +527,10 @@ export const world3: LevelDef[] = [
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });
       c = checkpointRest(b, c.endX, c.endRow); // 3 coins
       c = springboardWall(b, c.endX, c.endRow, { wallH: 5 }); // up to 17
-      c = goldbarPerch(b, c.endX, c.endRow, { index: 1 });
+      c = spikeGuardedBar(b, c.endX, c.endRow, 1); // +2 coins — goldbar 1 now
+      // floats over a 2-deep spike trench (2026-08 difficulty wave: risk the
+      // loot, not the lane): arc clean off the spring wall and it pays;
+      // undershoot and the teeth take their cut.
       // HONEST SHORTCUT (warp): press down here to skip the collapsing carpet
       // and the full entourage, surfacing on the gauntlet's far shoulder.
       // Walkers keep the 13-coin row; explorers keep their skin.
@@ -537,6 +581,11 @@ export const world3: LevelDef[] = [
       b.coinRow(g1 + 1, g1 + 9, c.endRow - 3); // 9 coins
       c = gavelRun(b, c.endX, c.endRow); // 6 coins, lever 1 (33 tiles out)
       c = gapJump(b, c.endX, c.endRow, { gap: 4 });
+      b.enemy('gavel', c.endX - 2, c.endRow - 4); // lever 1.5 (2026-08
+      // difficulty wave): a second house lever stamps the gap LANDING (col
+      // 47) — time the jump and the slam together. A hurt, not a kill for
+      // Certified; 47 tiles from the start (> 27, idle-silent) and the
+      // checkpoint at 69 sits after it.
       c = goldbarPerch(b, c.endX, c.endRow, { index: 0 });
       c = slotBank(b, c.endX, c.endRow, ['coin', 'coin', 'coin']); // 3 coin qb
       c = secretPocket(b, c.endX, c.endRow, { index: 0 });

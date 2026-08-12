@@ -73,6 +73,15 @@ export const FX_TABLE: Record<GameEvent, FxSpec | null> = {
     particles: [{ kind: 'dust', n: 8, colors: ['#cfc5b4', '#a89f8e'], spread: 1.8 }],
     shake: 0.15,
   },
+  // Hero morph / co-op bubble pop: a small white puff + ring. Deliberately NO
+  // shake and NO hit-stop (not in HIT_STOP) — swapping is a costume change,
+  // not an impact.
+  'hero-swap': {
+    particles: [
+      { kind: 'dust', n: 6, colors: ['#ffffff', '#e8e8e8'], spread: 1.3 },
+      { kind: 'ring', n: 1, colors: ['#ffffff'], spread: 2 },
+    ],
+  },
   // pickups & blocks
   coin: { particles: [{ kind: 'sparkle', n: 6, colors: ['#ffd54a', '#ffea90'], spread: 1 }] },
   certify: {

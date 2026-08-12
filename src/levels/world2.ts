@@ -334,7 +334,26 @@ export const world2: LevelDef[] = [
       c = secretPocket(b, c.endX, c.endRow, { index: 0 }); // -> 63
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 74 (gavel @ 70)
       c = checkpointRest(b, c.endX, c.endRow); // -> 80 (+3, checkpoint @ 76)
-      c = runway(b, c.endX, c.endRow, { len: 14, coinRow: 24, rings: true }); // -> 94 (+18)
+      // THE RETURN DUCT (2026-08 difficulty wave): the union hall's low
+      // ceiling duct replaces the old free runway. A brick lintel at row 25
+      // grows three single-column spike TEETH from its underside (rule 10:
+      // anchored to the solid directly above) at cols 85/87/89, with clean
+      // standing room between them. Small Estrada walks under untouched;
+      // Certified must duck-slide each tooth (ducking keeps momentum, kills
+      // acceleration — one tooth is exactly one slide) or pay a shrink. The
+      // flow bot is small and strolls the clear row; crawl coins pay the
+      // indignity. Idle-safe: nothing here has a clock.
+      b.ground(80, 93, 28); // -> 94 duct floor
+      b.platform(85, 89, 25, 'brick'); // the duct lintel
+      b.spikes(85, 85, 26); // tooth 1 (hangs FROM the lintel)
+      b.spikes(87, 87, 26); // tooth 2
+      b.spikes(89, 89, 26); // tooth 3
+      b.coinRow(85, 89, 27); // 5 crawl coins through the duct
+      b.coinRow(81, 84, 24); // 4 coins on the approach
+      b.coinRow(90, 93, 24); // 4 coins on the exit
+      b.coinRow(81, 83, 25); // 3 ring coins before the lintel
+      b.coinRow(91, 93, 25); // 3 ring coins after (+19 total)
+      c = { endX: 94, endRow: 28 }; // -> 94, same handover as the old runway
       c = skyLadder(b, c.endX, c.endRow, { index: 0 }); // -> 102
       c = spikePit(b, c.endX, c.endRow, { gap: 4 }); // -> 112
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'pollster', 'rat'] }); // -> 127
@@ -568,6 +587,12 @@ export const world2: LevelDef[] = [
       c = pipeField(b, c.endX, c.endRow, { pipes: 2, lawyer: true }); // -> 62 (lawyer @ 53)
       c = runway(b, c.endX, c.endRow, { len: 3 }); // -> 65 (sprint runway: 8 flat tiles before the lip)
       c = coinArc(b, c.endX, c.endRow, { gap: 4 }); // -> 75 (+6, void gap 68-71)
+      b.enemy('gavel', c.endX - 2, c.endRow - 4); // 2026-08 difficulty wave:
+      // the DOCKET STAMP hangs over the void-gap landing (col 73) — time the
+      // jump AND the slam. Contact is a hurt (Certified shrinks, small pays
+      // full price); the 45-frame pause + slow rise after each slam is the
+      // generous window through. 73 tiles from the start (> 27, idle-silent)
+      // and the act's checkpoint sits AFTER it, so respawns never re-face it.
       c = enemyGauntlet(b, c.endX, c.endRow, { kinds: ['rat', 'gavel'] }); // -> 86
       c = checkpointRest(b, c.endX, c.endRow); // -> 92 (+3, checkpoint @ 88)
       c = runway(b, c.endX, c.endRow, { len: 12, coinRow: 22, rings: true }); // -> 104 (+16)

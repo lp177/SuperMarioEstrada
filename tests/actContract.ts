@@ -37,6 +37,17 @@
 //                        exit the span to the RIGHT (the ratchet may legally
 //                        wall the left), unless a warp entry inside the
 //                        pocket provides the exit.
+//  10. HAZARDS ANCHORED — playtest rule (2026-08): traps "seem just floating
+//                        in air... really not fun". A hazard must grow out
+//                        of the landscape. Every 'spike' tile needs a
+//                        solid-ish neighbor (solid directly below = floor
+//                        spikes, directly above = ceiling spikes, or
+//                        laterally adjacent = wall spikes). Every 'lava'
+//                        tile must belong to a POOL (4-connected lava
+//                        component) that touches solid below or beside, or
+//                        that reaches the map's bottom row (the classical
+//                        pit-sealing pool). A hazard tile floating with no
+//                        such anchor fails with act + coords.
 //
 // When a rule fails an act, the rule is working: fix the content, not the
 // threshold (AGENTS.md, design rule 7). Rules 8 and 9 are EXPECTED to fail
@@ -50,6 +61,7 @@ import type {
   InputState,
   LevelDef,
   SpawnPoint,
+  TileKind,
   TileMapLike,
   WorldNo,
 } from '../src/core/types.ts';
@@ -137,6 +149,7 @@ const IDLE_INPUT: InputState = {
   run: false,
   firePressed: false,
   pausePressed: false,
+  swapPressed: false,
 };
 
 /** "px (x,y) tile (tx,ty)" — every violation names its position this way. */
@@ -296,6 +309,7 @@ export function flowBot(
       run,
       firePressed: false,
       pausePressed: false,
+      swapPressed: false,
     };
     if (holdT > 0) holdT--;
     level.update(input);
@@ -730,6 +744,7 @@ export function checkAct(def: LevelDef): void {
   checkIdleSilence(def, fail);
   checkGapsCarryRisk(built, fail);
   checkNoTraps(def, built, reached, fail);
+  checkHazardsAnchored(built, fail);
 }
 
 // -- rule 1: STRUCTURE ------------------------------------------------------
@@ -1166,6 +1181,106 @@ function checkNoTraps(
         R,
         `floored ${r.kind} recess at columns ${r.x0}..${r.x1} (floor row ${r.floorRow}) is a trap: dropped at column ${tx}, the flow-bot policy could not exit right past column ${r.x1} within ${RECESS.probeFrames} frames (deepest x=${Math.round(bot.maxX)}px, tile ${Math.floor(bot.maxX / TILE)}) — lower the exit wall, clear the blocks over the exit arc, step the exit in <= 2-row hops, or warp it out`,
       );
+    }
+  }
+}
+
+// -- rule 10: HAZARDS ANCHORED -----------------------------------------------
+// Playtest (2026-08): traps "seem just floating in air... really not fun and
+// highly predictable". A hazard is landscape, not weather — it must visibly
+// grow out of something solid.
+//
+//   SPIKES (per tile): every 'spike' tile needs a solid-ish neighbor —
+//     a solid tile directly BELOW (floor spikes growing from their pit
+//     floor), directly ABOVE (ceiling spikes in duck-under corridors), or
+//     LATERALLY adjacent (wall spikes). Solid-ish kinds: ground / bedrock /
+//     brick / pipe / usedblock / crumble.
+//
+//   LAVA (per pool): lava behaves as a liquid body, so anchoring is judged
+//     on the whole 4-connected component, not tile by tile (the interior of
+//     a wide moat only ever touches its own lava). A pool is anchored if ANY
+//     of its tiles has a solid-ish tile directly below or laterally beside
+//     (a moat cupped by its banks), OR if the pool reaches the map's bottom
+//     row (the classical pool sealing a bottomless pit). A pool touching
+//     neither is a floating lava blob and fails.
+//
+// Out-of-bounds behavior this rule leans on (tilemap.ts): side OOB is
+// 'bedrock' (map-edge hazards are anchored by the world wall), below-bottom
+// OOB is 'empty' — which is exactly why bottom-row pools need their explicit
+// exemption.
+const ANCHOR_KINDS: ReadonlySet<TileKind> = new Set<TileKind>([
+  'ground',
+  'bedrock',
+  'brick',
+  'pipe',
+  'usedblock',
+  'crumble',
+]);
+
+function checkHazardsAnchored(built: BuiltLevel, fail: Fail): void {
+  const R = 'rule 10 (hazards anchored)';
+  const map = built.map;
+  const w = map.wTiles;
+  const h = map.hTiles;
+
+  const solidish = (tx: number, ty: number): boolean => ANCHOR_KINDS.has(map.tileAt(tx, ty));
+
+  // -- spikes: every tile anchors itself -------------------------------------
+  for (let ty = 0; ty < h; ty++) {
+    for (let tx = 0; tx < w; tx++) {
+      if (map.tileAt(tx, ty) !== 'spike') continue;
+      const anchored =
+        solidish(tx, ty + 1) || // floor spikes
+        solidish(tx, ty - 1) || // ceiling spikes
+        solidish(tx - 1, ty) || // wall spikes
+        solidish(tx + 1, ty);
+      if (!anchored) {
+        fail(
+          R,
+          `spike at ${at((tx + 0.5) * TILE, (ty + 0.5) * TILE)} floats with no solid neighbor (below/above/beside) — spikes must grow out of the landscape`,
+        );
+      }
+    }
+  }
+
+  // -- lava: every pool anchors itself ----------------------------------------
+  const seen = new Uint8Array(w * h);
+  for (let ty = 0; ty < h; ty++) {
+    for (let tx = 0; tx < w; tx++) {
+      if (map.tileAt(tx, ty) !== 'lava' || seen[ty * w + tx] === 1) continue;
+      // flood the pool
+      const pool: number[] = [];
+      const stack = [ty * w + tx];
+      seen[ty * w + tx] = 1;
+      let anchored = false;
+      while (stack.length > 0) {
+        const cur = stack.pop()!;
+        pool.push(cur);
+        const cx = cur % w;
+        const cy = Math.floor(cur / w);
+        if (cy === h - 1) anchored = true; // bottom-row pool seals a void pit
+        if (solidish(cx, cy + 1) || solidish(cx - 1, cy) || solidish(cx + 1, cy)) {
+          anchored = true;
+        }
+        for (const [nx, ny] of [
+          [cx + 1, cy],
+          [cx - 1, cy],
+          [cx, cy + 1],
+          [cx, cy - 1],
+        ] as const) {
+          if (nx < 0 || nx >= w || ny < 0 || ny >= h) continue;
+          const idx = ny * w + nx;
+          if (seen[idx] === 1 || map.tileAt(nx, ny) !== 'lava') continue;
+          seen[idx] = 1;
+          stack.push(idx);
+        }
+      }
+      if (!anchored) {
+        fail(
+          R,
+          `lava pool of ${pool.length} tile(s) starting at ${at((tx + 0.5) * TILE, (ty + 0.5) * TILE)} floats: no tile of the pool touches solid below or beside, and it never reaches the bottom row — lava needs banks or a pit to sit in`,
+        );
+      }
     }
   }
 }

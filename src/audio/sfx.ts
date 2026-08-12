@@ -56,6 +56,12 @@ const RECIPES: Record<GameEvent, RecipeSpec> = {
     { wave: 'square', f0: 200, f1: 70, dur: 8, vol: 0.4, slide: true },
     { wave: 'noise', f0: 2500, f1: 900, dur: 3, vol: 0.3, slide: true }, // click
   ],
+  // Quick two-tone morph blip — one hero out, the other in (also the co-op
+  // bubble pop): D5 answering a fourth up, with a whisper of poof underneath.
+  'hero-swap': [
+    { wave: 'square', f0: 587.3, f1: 587.3, dur: 12, vol: 0.3, arp: [0, 5] },
+    { wave: 'noise', f0: 1400, f1: 500, dur: 6, vol: 0.12, slide: true }, // poof
+  ],
 
   // -- pickups & blocks -----------------------------------------------------
   // The classic bright two-note ding: E6 then B6 (a fifth up).
