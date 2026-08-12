@@ -1226,31 +1226,11 @@ function focusRing(ctx: Ctx, x: number, y: number, r: number, frame: number): vo
 
 function drawDot(ctx: Ctx, x: number, y: number, s: NodeState, frame: number): void {
   baseShadow(ctx, x, y + 5, 8);
-  if (s.optional && s.unlocked) {
-    // bonus acts wear a dashed teal ring + a tag on a string
-    ctx.setLineDash([3, 3]);
-    ctx.strokeStyle = '#5fd9c8';
-    ctx.lineWidth = 1.6;
-    ctx.beginPath();
-    ctx.arc(x, y, 11.5, 0, Math.PI * 2);
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.strokeStyle = '#8a7a52';
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(x - 6, y - 6);
-    ctx.lineTo(x - 14, y - 15);
-    ctx.stroke();
-    ctx.save();
-    ctx.translate(x - 25, y - 19);
-    ctx.rotate(-0.08);
-    ctx.fillStyle = '#efe28a';
-    ctx.fillRect(-13, -5, 27, 10);
-    ctx.strokeStyle = '#4a3320';
-    ctx.strokeRect(-13, -5, 27, 10);
-    artText(ctx, 'BONUS', 0.5, 0.5, 6, '#4a3320');
-    ctx.restore();
-  }
+  // Deliberately NO special marking for optional acts (playtest: a "BONUS"
+  // tag steers the choice and suggests the level is skippable/useless). The
+  // branching of the trails IS the communication: every level on the map is
+  // presented as equally real, and the player owns their route.
+  // (s.optional still exists in the graph for unlock logic and tooling.)
   // the dot
   const rim = s.unlocked ? '#f7ecc9' : '#4a4a55';
   const fill = !s.unlocked ? '#23232c' : s.cleared ? '#ffca28' : '#e33b28';
