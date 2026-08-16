@@ -25,7 +25,7 @@
 //   could resurrect a stale version of itself.
 // ============================================================================
 
-const BUILD_ID = '5e8f7743430b3615';
+const BUILD_ID = '6f20c7b89fb4db71';
 const PRECACHE = ["./","./.nojekyll","./assets/index-uukBUVjR.js","./favicon.svg","./index.html","./manifest.webmanifest"];
 const CACHE = `sme-${BUILD_ID}`;
 const SHELL = ['./', './index.html'];

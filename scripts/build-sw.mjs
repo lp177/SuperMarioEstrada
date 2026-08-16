@@ -32,7 +32,10 @@ function walk(dir) {
 
 const files = walk(docs)
   .map((p) => relative(docs, p).replaceAll('\\', '/'))
-  .filter((p) => p !== 'sw.js' && !p.endsWith('.map'))
+  // social-card.png is the Open Graph preview: crawlers fetch it, the game
+  // never does. Precaching it would add ~600KB to every offline install for
+  // a file no player's browser will ever ask for.
+  .filter((p) => p !== 'sw.js' && !p.endsWith('.map') && p !== 'social-card.png')
   .sort();
 
 if (!files.includes('index.html')) {
